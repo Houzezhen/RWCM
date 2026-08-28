@@ -7,6 +7,7 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
+from tqdm import tqdm
 
 from .checkpoint import (
     collectively_validate,
@@ -349,7 +350,13 @@ def run() -> None:
                 train_sampler.set_epoch(epoch)
             model.train()
             epoch_started = time.monotonic()
-            for batch_index, batch in enumerate(train_loader):
+            progress = tqdm(
+                train_loader,
+                desc=f"epoch {epoch}/{config.epochs}",
+                disable=not ctx.is_main,
+                dynamic_ncols=True,
+            )
+            for batch_index, batch in enumerate(progress):
                 batch = move_batch_to_device(batch, ctx.device)
                 accumulation_index = batch_index % config.gradient_accumulation_steps
                 sync_step = (
@@ -399,6 +406,8 @@ def run() -> None:
                             },
                         }
                         print(json.dumps(printable))
+                    if ctx.is_main:
+                        progress.set_postfix(loss=f"{float(loss_parts['loss']):.4f}", step=global_step)
 
             metrics = None
             is_best = False

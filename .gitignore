@@ -7,3 +7,8 @@ dist/
 outputs/
 wandb/
 .pytest_cache/
+outputs/
+data_toiletButton_merged_0814/
+data_toiletButton_merged_0814_pistar/
+data_toiletButton_merged_0814_with_return/
+rollout_with_return/

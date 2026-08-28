@@ -2,10 +2,11 @@
 set -euo pipefail
 
 # Edit only this section, then run:  bash 3_run_eval.sh
+PYTHON="/home/user/code_1/WCM/.venv/bin/python"
 GPUS=1 #8                                  # 1 or 8
 CUDA_VISIBLE_DEVICES=0 #"0,1,2,3,4,5,6,7"
-CHECKPOINT="outputs/wcm/checkpoints/best.pt"
-OUTPUT_DIR="outputs/wcm/eval"
+CHECKPOINT="outputs/wcm_sink2table_0819/checkpoints/best.pt"
+OUTPUT_DIR="outputs/wcm_sink2table_0819/eval"
 SPLIT="val"                             # train | val | all
 BATCH_SIZE=16 #64
 NUM_WORKERS=2 #8
@@ -17,8 +18,8 @@ LOG_EVERY_BATCHES=20                    # unbuffered fetch/forward diagnostics; 
 
 # These values must identify the same dataset used by the checkpoint.  They
 # are intentionally editable here so evaluation needs no command-line flags.
-DATASET_REPO_ID="lerobot_with_return_val"                         # empty = use the checkpoint's dataset id
-DATASET_ROOT="/path/to/lerobot_with_return_val"     
+DATASET_REPO_ID=""                         # empty = use the checkpoint's dataset id
+DATASET_ROOT=""
 DATASET_REVISION=""
 
 VISION_MODEL_NAME="google/vit-base-patch16-224-in21k"  # Local path / hf name supported
@@ -47,11 +48,13 @@ fi
 if [[ -n "$CUDA_VISIBLE_DEVICES" ]]; then
   export CUDA_VISIBLE_DEVICES
 fi
-python -u -c 'import torch; device=torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"; print("[launcher] torch={} cuda={} cuda_available={} visible_devices={} device={}".format(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.device_count(), device), flush=True)'
+"$PYTHON" -u -c 'import torch; device=torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"; print("[launcher] torch={} cuda={} cuda_available={} visible_devices={} device={}".format(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.device_count(), device), flush=True)'
 # if [[ -n "$STABLEWM_HOME" ]]; then export STABLEWM_HOME; else unset STABLEWM_HOME 2>/dev/null || true; fi
 # if [[ -n "$LOCAL_DATASET_DIR" ]]; then export LOCAL_DATASET_DIR; else unset LOCAL_DATASET_DIR 2>/dev/null || true; fi
 # if [[ -z "$DATASET_ROOT" && -n "$LOCAL_DATASET_DIR" ]]; then DATASET_ROOT="$LOCAL_DATASET_DIR"; fi
 export WANDB_MODE
+# huggingface.co 直连会被重置；走镜像站（已设置 HF_ENDPOINT 时尊重原值）
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 export PYTHONUNBUFFERED=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
@@ -78,12 +81,12 @@ if [[ "$ALLOW_CPU_SMOKE" == "1" ]]; then
   export WCM_FORCE_CPU=1
 else
   unset WCM_ALLOW_CPU_DDP WCM_FORCE_CPU 2>/dev/null || true
-  if ! python -c 'import torch,sys; sys.exit(0 if torch.cuda.is_available() and torch.cuda.device_count() >= 1 else 1)'; then
+  if ! "$PYTHON" -c 'import torch,sys; sys.exit(0 if torch.cuda.is_available() and torch.cuda.device_count() >= 1 else 1)'; then
     echo "GPUS=1 requires at least one visible CUDA device. Set ALLOW_CPU_SMOKE=1 only for an intentional CPU smoke test." >&2
     exit 2
   fi
   if [[ "$GPUS" == "8" ]]; then
-    if ! python -c 'import torch,sys; sys.exit(0 if torch.cuda.device_count() >= 8 else 1)'; then
+    if ! "$PYTHON" -c 'import torch,sys; sys.exit(0 if torch.cuda.device_count() >= 8 else 1)'; then
       echo "GPUS=8 requires at least eight visible CUDA devices. Set ALLOW_CPU_SMOKE=1 only for a CPU smoke test." >&2
       exit 2
     fi
@@ -117,8 +120,8 @@ EVAL_ARGS=(
 )
 
 if [[ "$GPUS" == "1" ]]; then
-  python -u -m world_critic.evaluate "${EVAL_ARGS[@]}"
+  "$PYTHON" -u -m world_critic.evaluate "${EVAL_ARGS[@]}"
 else
-  torchrun --standalone --nproc-per-node=8 \
+  "$PYTHON" -m torch.distributed.run --standalone --nproc-per-node=8 \
     -m world_critic.evaluate "${EVAL_ARGS[@]}"
 fi

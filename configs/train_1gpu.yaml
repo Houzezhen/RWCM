@@ -1,22 +1,22 @@
 output_dir: outputs/wcm
 seed: 3072
 epochs: 100
-per_device_batch_size: 32
-eval_batch_size: 64
-num_workers: 8
+per_device_batch_size: 8
+eval_batch_size: 16
+num_workers: 4
 gradient_accumulation_steps: 1
 max_grad_norm: 1.0
 precision: bf16
 log_every: 20
 eval_every_epochs: 1
 save_every_epochs: 1
-expected_world_size: 8
+expected_world_size: 1
 ddp_timeout_minutes: 30
 deterministic: false
 
 data:
-  repo_id: data_toiletButton_0722_2_with_return
-  root: /media/Data/user/huggingface/lerobot/lerobotevo/data_toiletButton_0722_2_with_return  # Ensure 1_add_returns.sh has been run to add return fields and convert to LeRobot v3.0
+  repo_id: data_toiletButton_merged_0814_with_return
+  root: /home/user/code_1/WCM/data_toiletButton_merged_0814_with_return  # merged toiletButton_0814 (success) + data_toiletButton_0703_f (failure), v2.1 with return fields
   revision: null
   image_keys:
     - observation.images.primary
@@ -70,8 +70,8 @@ loss:
   sigreg_num_projections: 1024
 
 optim:
-  lr: 5.0e-5
+  lr: 1.0e-5
   weight_decay: 1.0e-3
   betas: [0.9, 0.95]
-  warmup_steps: 1000
+  warmup_steps: 300
   min_lr_ratio: 0.1

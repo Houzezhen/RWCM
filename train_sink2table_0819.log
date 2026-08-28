@@ -1,0 +1,12 @@
+/home/user/code_1/WCM/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:174: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 304: OS call failed or operation not supported on this OS (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:109.)
+  return torch._C._cuda_getDeviceCount() > 0
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/user/code_1/WCM/world_critic/train.py", line 493, in <module>
+    run()
+  File "/home/user/code_1/WCM/world_critic/train.py", line 142, in run
+    collectively_validate(ctx, "Training action-statistics preparation", prepare_action_statistics)
+  File "/home/user/code_1/WCM/world_critic/checkpoint.py", line 41, in collectively_validate
+    raise RuntimeError(f"{operation} failed: {result['failures']}")
+RuntimeError: Training action-statistics preparation failed: [{'rank': 0, 'error': "PermissionError(13, 'Permission denied')"}]

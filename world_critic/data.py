@@ -587,7 +587,29 @@ class WorldCriticCollator:
         return output
 
 
+def _v21_dataset_root(config: DataConfig) -> Path | None:
+    """Return the v2.1 dataset root when the config points at a v2.1 layout."""
+    if not config.root:
+        return None
+    root = Path(config.root).expanduser().resolve()
+    candidates = [root]
+    if config.repo_id:
+        candidates.append(root.joinpath(*config.repo_id.split("/")))
+    for candidate in candidates:
+        meta = candidate / "meta"
+        if (meta / "episodes.jsonl").is_file() and (meta / "tasks.jsonl").is_file():
+            return candidate
+    return None
+
+
 def load_lerobot_dataset(config: DataConfig) -> Any:
+    v21_root = _v21_dataset_root(config)
+    if v21_root is not None:
+        from .v21_dataset import LeRobotV21Dataset
+
+        dataset = LeRobotV21Dataset(v21_root)
+        _preflight_video_decoder(dataset, config)
+        return dataset
     try:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
     except ImportError as exc:
@@ -668,10 +690,14 @@ def build_datasets(config: DataConfig, manifest_path: str | Path | None = None):
     requested = set(split.train) | set(split.val)
     unknown = requested - available
     if unknown:
-        raise ValueError(f"Split manifest references episodes absent from this dataset: {sorted(unknown)[:10]}")
-    missing = available - requested
-    if missing:
-        raise ValueError(f"Split manifest does not cover all dataset episodes: {sorted(missing)[:10]}")
+        raise ValueError(f"Split manifest references episodes absent from the dataset: {sorted(unknown)[:10]}")
+    # An explicitly configured manifest may intentionally train on a subset
+    # (for example to drop duplicated episodes); only auto-generated manifests
+    # are required to cover every episode in the dataset.
+    if not config.split_manifest:
+        missing = available - requested
+        if missing:
+            raise ValueError(f"Split manifest does not cover all dataset episodes: {sorted(missing)[:10]}")
     fit_action_normalization(dataset, config, split.train)
     validate_action_normalization(dataset, config)
     train = LeRobotWorldCriticDataset(dataset, config, split.train)

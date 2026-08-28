@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+PYTHON="/home/user/code_1/WCM/.venv/bin/python"
 # Edit only this section, then run:  bash 2_run_train.sh
-GPUS=1 #8                                  # 1 or 8
+GPUS=1 #8                                  # e.g. 1, 2, 8
 CUDA_VISIBLE_DEVICES=0 #"0,1,2,3,4,5,6,7"
-CONFIG="configs/train_8gpu.yaml"
-DATASET_REPO_ID="lerobot_with_return"                         # required unless CONFIG already contains it
-DATASET_ROOT="/path/to/lerobot_with_return"                              # empty = use the HF cache
+CONFIG="configs/train_1gpu.yaml"
+DATASET_REPO_ID="data_toiletButton_merged_0814_with_return"               # required unless CONFIG already contains it
+DATASET_ROOT="/home/user/code_1/WCM/data_toiletButton_merged_0814_with_return"   # empty = use the HF cache
 DATASET_REVISION=""                            # optional
-OUTPUT_DIR="outputs/wcm"
-EPOCHS=""                                      # empty = keep CONFIG value
-PER_DEVICE_BATCH_SIZE=""                       # empty = keep CONFIG value
+OUTPUT_DIR="outputs/wcm_toiletButton_merged_0814"
+EPOCHS="30"                                      # empty = keep CONFIG value
+PER_DEVICE_BATCH_SIZE="8"                     # empty = keep CONFIG value
 EVAL_BATCH_SIZE=""                             # empty = keep CONFIG value
 NUM_WORKERS=""                                 # empty = keep CONFIG value
 PRECISION=""                                   # fp32 or bf16; empty = CONFIG
@@ -22,8 +22,8 @@ ALLOW_CPU_SMOKE=0                               # 1 only for an intentional Gloo
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if [[ "$GPUS" != "1" && "$GPUS" != "8" ]]; then
-  echo "GPUS must be 1 or 8 (got: $GPUS)" >&2
+if ! [[ "$GPUS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "GPUS must be a positive integer (got: $GPUS)" >&2
   exit 2
 fi
 if [[ -n "$CUDA_VISIBLE_DEVICES" ]]; then
@@ -33,6 +33,8 @@ fi
 # if [[ -n "$LOCAL_DATASET_DIR" ]]; then export LOCAL_DATASET_DIR; else unset LOCAL_DATASET_DIR 2>/dev/null || true; fi
 # if [[ -z "$DATASET_ROOT" && -n "$LOCAL_DATASET_DIR" ]]; then DATASET_ROOT="$LOCAL_DATASET_DIR"; fi
 export WANDB_MODE
+# huggingface.co 直连会被重置；走镜像站（已设置 HF_ENDPOINT 时尊重原值）
+export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 export WCM_DATASET_REPO_ID="$DATASET_REPO_ID"
@@ -62,17 +64,17 @@ if [[ "$ALLOW_CPU_SMOKE" == "1" ]]; then
   export WCM_FORCE_CPU=1
 else
   unset WCM_ALLOW_CPU_DDP WCM_FORCE_CPU 2>/dev/null || true
-  if [[ "$GPUS" == "8" ]]; then
-    if ! python -c 'import torch,sys; sys.exit(0 if torch.cuda.device_count() >= 8 else 1)'; then
-      echo "GPUS=8 requires at least eight visible CUDA devices. Set ALLOW_CPU_SMOKE=1 only for a CPU smoke test." >&2
+  if [[ "$GPUS" -gt 1 ]]; then
+    if ! "$PYTHON" -c "import torch,sys; sys.exit(0 if torch.cuda.device_count() >= $GPUS else 1)"; then
+      echo "GPUS=$GPUS requires at least $GPUS visible CUDA devices. Set ALLOW_CPU_SMOKE=1 only for a CPU smoke test." >&2
       exit 2
     fi
   fi
 fi
 
 if [[ "$GPUS" == "1" ]]; then
-  python -m world_critic.train --config "$CONFIG"
+  "$PYTHON" -m world_critic.train --config "$CONFIG"
 else
-  torchrun --standalone --nproc-per-node=8 \
+  "$PYTHON" -m torch.distributed.run --standalone --nproc-per-node="$GPUS" \
     -m world_critic.train --config "$CONFIG"
 fi
