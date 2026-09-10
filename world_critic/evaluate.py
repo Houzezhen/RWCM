@@ -67,8 +67,17 @@ def parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Write one value-vs-return curve per episode. Each overlapping window contributes "
+            "Render one value-vs-return PNG per episode. Each overlapping window contributes "
             "only its last valid timestep, sorted by frame_index (default: enabled)."
+        ),
+    )
+    result.add_argument(
+        "--episode-metrics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Write per-episode JSON/CSV needed for paired uncertainty estimates "
+            "without requiring PNG plots (default: enabled)."
         ),
     )
     result.add_argument(
@@ -78,7 +87,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--max-curve-episodes",
         type=int,
-        help="Optional limit on the number of sorted episode plots written; metrics still use the full split.",
+        help="Optional limit on sorted episode PNGs; JSON/CSV metrics still use the full split.",
     )
     result.add_argument(
         "--log-every-batches",
@@ -278,7 +287,7 @@ def run() -> None:
             train_config,
             ctx,
             args.max_batches,
-            collect_episode_curves=args.episode_curves,
+            collect_episode_curves=args.episode_metrics or args.episode_curves,
             log_every_batches=args.log_every_batches,
         )
         log(f"evaluate_loader complete: metric_keys={sorted(metrics.keys())}")
@@ -289,17 +298,15 @@ def run() -> None:
 
         def write_episode_curves() -> None:
             nonlocal curve_summary
-            if not ctx.is_main or not args.episode_curves:
+            if not ctx.is_main or not (args.episode_metrics or args.episode_curves):
                 return
             if curve_records is None:
                 raise RuntimeError("Rank 0 did not receive episode curve records.")
-            records_to_write = curve_records
-            if args.max_curve_episodes is not None:
-                records_to_write = curve_records[: args.max_curve_episodes]
             curve_summary = write_episode_curve_artifacts(
-                records_to_write,
+                curve_records,
                 curve_dir,
-                render_plots=True,
+                render_plots=args.episode_curves,
+                max_plot_episodes=args.max_curve_episodes,
             )
             curve_summary["total_num_episodes"] = len(curve_records)
             curve_summary["max_episodes"] = args.max_curve_episodes
@@ -307,7 +314,11 @@ def run() -> None:
                 json.dumps(_json_safe(curve_summary), indent=2), encoding="utf-8"
             )
 
-        log("writing episode curve artifacts..." if args.episode_curves else "episode curve writing disabled")
+        log(
+            "writing episode metrics/curves..."
+            if args.episode_metrics or args.episode_curves
+            else "episode metric and curve writing disabled"
+        )
         collectively_validate(ctx, "Evaluation episode curve write", write_episode_curves)
         log("episode curve stage complete")
         result = _json_safe({

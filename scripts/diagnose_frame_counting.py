@@ -1,19 +1,22 @@
-"""帧号计数捷径诊断（纯评估，无训练，§7.5 方案）。
+"""视觉扰动敏感性诊断（保留旧文件名以兼容现有运行脚本）。
 
-检验 value 模型到底在"看图判进度"还是在"数帧/用位置蒙答案"。
+检验 value 预测是否依赖当前画面和短期运动信息。
+
+模型输入不包含 episode_id、frame_index 或绝对时间；固定长度滑窗中的时间
+embedding 每个窗口都从 0 开始。因此本脚本不能证明模型在“数绝对帧号”，
+它只能衡量误差与离线帧号的相关性，以及对视觉干预的响应强弱。
 对已训练 checkpoint 在给定数据集上做两类探针：
 
 A. 帧号分桶误差曲线（全量窗口，无扰动）
    按 (帧号占集长比例 f/L, 剩余步数 L-f, 集长 L, 绝对帧号 f) 分桶，
    输出每桶 mse/mae/bias/pearson/return 均值。
-   若模型靠"计数/位置"，误差会集中在"时长-进度映射异常"的桶
-   （例如集长偏离训练主流分布的集、离集尾/集首很远的位置）。
+   这是事后分层诊断。相关性不能证明这些字段被模型使用，因为它们不在输入中。
 
 B. 内容-位置对照扰动（子集窗口，重算前向）
    保持窗口内每个位置的标签不动，只改喂给模型的画面内容：
    B1 视觉回拨：把最后历史帧的画面换成 k 帧前的画面（k=1 和最远）。
       若模型读视觉进度，预测值应随画面回拨向"更早帧的真值"移动
-      （斜率 β≈1）；若靠计数/位置，预测值不动（β≈0）。
+      （斜率 β≈1）；β≈0 只表示对该干预不敏感，不能单独归因为计数。
    B2 端点噪声：给最后历史帧画面加高斯噪声（内容破坏的对照）。
    B3 冻结运动：把整段历史画面都替换成端点帧画面（抹掉全部运动信息）。
 
@@ -360,6 +363,11 @@ def run() -> None:
         "split": args.split,
         "history_size": history,
         "num_windows": n_all,
+        "absolute_frame_available_to_model": False,
+        "interpretation": (
+            "Frame buckets are post-hoc strata. Only image interventions test visual "
+            "sensitivity; they do not establish an absolute-frame counting mechanism."
+        ),
         "overall": overall,
         "buckets": bucket_summary,
         "probes": probes,

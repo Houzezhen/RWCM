@@ -89,9 +89,12 @@ class ModelConfig:
     num_spatial_registers: int = 0
     register_block_size: int = 2
     use_block_register_fusion: bool = False
-    # 块间因果的稀疏未来泄漏比例（0=严格因果；0.05 表示随机放行 5% 被屏蔽的
-    # 未来 token，BigBird 式随机注意力，训练期提供少量前瞻信息）
+    # 历史诊断使用的 token-edge 放行率。它在全部 token 对上采样，并不等于
+    # “未来 observation 泄漏比例”；新训练应保持为 0。
     register_future_leak_ratio: float = 0.0
+    # Historical diagnostics may intentionally violate online causality. This
+    # must be explicit so a deployable training run cannot do so by accident.
+    allow_noncausal_register_ablation: bool = False
     vision: VisionConfig = field(default_factory=VisionConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
 
@@ -338,6 +341,50 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("model.latent_dim must be divisible by model.trunk_heads.")
     if config.model.latent_dim % config.model.language.fusion_heads != 0:
         raise ValueError("model.latent_dim must be divisible by language.fusion_heads.")
+    if config.model.vision.num_register_tokens < 0:
+        raise ValueError("model.vision.num_register_tokens cannot be negative.")
+    if config.model.vision.register_insert not in {"early", "late"}:
+        raise ValueError("model.vision.register_insert must be early or late.")
+    if config.model.vision.num_register_tokens > 0 and not config.model.vision.trainable:
+        raise ValueError("Vision register tokens require model.vision.trainable=true.")
+    if config.model.num_temporal_registers < 0 or config.model.num_spatial_registers < 0:
+        raise ValueError("Register token counts cannot be negative.")
+    if config.model.register_block_size < 1:
+        raise ValueError("model.register_block_size must be positive.")
+    if not 0.0 <= config.model.register_future_leak_ratio < 1.0:
+        raise ValueError("model.register_future_leak_ratio must be in [0, 1).")
+    block_registers = config.model.num_temporal_registers + config.model.num_spatial_registers
+    if config.model.use_block_register_fusion:
+        if block_registers < 1:
+            raise ValueError(
+                "use_block_register_fusion=true requires at least one temporal or spatial register."
+            )
+        if (
+            config.model.register_block_size > 1
+            and not config.model.allow_noncausal_register_ablation
+        ):
+            raise ValueError(
+                "register_block_size>1 exposes later states inside each block and is not causal. "
+                "Use block_size=1 for trainable/evaluable models."
+            )
+        if (
+            config.model.register_future_leak_ratio > 0
+            and not config.model.allow_noncausal_register_ablation
+        ):
+            raise ValueError(
+                "register_future_leak_ratio>0 leaks future observations and is disabled for "
+                "trainable/evaluable models."
+            )
+    elif config.model.num_spatial_registers > 0:
+        raise ValueError(
+            "num_spatial_registers is only used when use_block_register_fusion=true."
+        )
+    elif config.model.register_future_leak_ratio > 0:
+        raise ValueError(
+            "register_future_leak_ratio is only used when use_block_register_fusion=true."
+        )
+    if config.optim.register_lr_scale <= 0:
+        raise ValueError("optim.register_lr_scale must be positive.")
     if config.model.predict_state_vector and config.data.state_key is None:
         raise ValueError("predict_state_vector requires data.state_key.")
     if config.loss.next_state_vector_weight > 0 and not config.model.predict_state_vector:

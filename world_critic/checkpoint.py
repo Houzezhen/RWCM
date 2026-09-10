@@ -162,6 +162,16 @@ def load_training_checkpoint(
         if expected_config is not None:
             saved = checkpoint["config"]
             current = asdict(expected_config)
+            saved_model = saved.get("model", {})
+            if "allow_noncausal_register_ablation" not in saved_model:
+                # This safety flag was added after the first register runs.
+                # Its absence must not make an otherwise identical historical
+                # full-resume checkpoint unusable.
+                saved = dict(saved)
+                saved["model"] = dict(saved_model)
+                saved["model"]["allow_noncausal_register_ablation"] = current["model"][
+                    "allow_noncausal_register_ablation"
+                ]
             immutable_paths = [
                 ("data", "repo_id"),
                 ("data", "root"),

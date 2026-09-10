@@ -97,6 +97,53 @@ class VisionEncoder(nn.Module):
             self.backbone.eval()
         return self
 
+    @staticmethod
+    def _last_hidden_state(output) -> torch.Tensor:
+        """Normalize Hugging Face encoder return types to one tensor."""
+        if torch.is_tensor(output):
+            return output
+        if hasattr(output, "last_hidden_state"):
+            return output.last_hidden_state
+        if isinstance(output, (tuple, list)) and output:
+            return output[0]
+        raise TypeError(f"Unsupported vision encoder output type: {type(output).__name__}")
+
+    def encoder_layers(self) -> nn.ModuleList:
+        """Return the ViT layers across supported Transformers layouts."""
+        encoder = getattr(self.backbone, "encoder", None)
+        layers = getattr(encoder, "layer", None)
+        if layers is None:
+            layers = getattr(encoder, "layers", None)
+        if layers is None:
+            layers = getattr(self.backbone, "layers", None)
+        if layers is None:
+            raise TypeError(
+                f"{type(self.backbone).__name__} does not expose ViT encoder layers "
+                "as encoder.layer, encoder.layers, or layers."
+            )
+        return layers
+
+    def _run_encoder(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Run one encoder pass without re-running image embeddings."""
+        encoder = getattr(self.backbone, "encoder", None)
+        if encoder is not None:
+            return self._last_hidden_state(encoder(tokens))
+
+        hidden = tokens
+        for layer in self.encoder_layers():
+            hidden = self._last_hidden_state(layer(hidden))
+        return hidden
+
+    def _final_layer_norm(self, tokens: torch.Tensor) -> torch.Tensor:
+        layer_norm = getattr(self.backbone, "layernorm", None)
+        if layer_norm is None:
+            layer_norm = getattr(self.backbone, "post_layernorm", None)
+        if layer_norm is None:
+            raise TypeError(
+                f"{type(self.backbone).__name__} does not expose a final vision LayerNorm."
+            )
+        return layer_norm(tokens)
+
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """
         Args:
@@ -140,9 +187,7 @@ class VisionEncoder(nn.Module):
             tokens = torch.cat(
                 [hidden, self.register_tokens.expand(hidden.size(0), -1, -1)], dim=1
             )
-            for module in self.backbone.layers:
-                tokens = module(tokens)
-            hidden = self.backbone.layernorm(tokens)
+            hidden = self._final_layer_norm(self._run_encoder(tokens))
         else:
             # late（旧行为，默认）：backbone 完整 forward 后，把寄存器拼到
             # last_hidden_state 末尾再过一遍全部 encoder 层（等效双倍深度，
@@ -156,9 +201,7 @@ class VisionEncoder(nn.Module):
             tokens = torch.cat(
                 [hidden, self.register_tokens.expand(hidden.size(0), -1, -1)], dim=1
             )
-            for module in self.backbone.layers:
-                tokens = module(tokens)
-            hidden = tokens
+            hidden = self._run_encoder(tokens)
         frame_latent = self.projection(hidden[:, 0])
         frame_latent = frame_latent.view(batch, time, views, -1)
         return frame_latent + self.camera_embedding[:, :, :views]
@@ -424,7 +467,8 @@ class BlockRegisterFusion(nn.Module):
         col_block = col_pos // self.block_size
         # True=屏蔽：行所在块 < 列所在块（列在未来块）
         attn_mask = row_block[:, None] < col_block[None, :]
-        # 稀疏未来泄漏：对被屏蔽的未来位置按比例随机放行（确定性采样，训练/推理一致）
+        # Legacy non-causal diagnostic: this samples all token-token edges, so
+        # the configured ratio is not an observation-level leakage probability.
         if self.future_leak_ratio > 0.0:
             blocked = attn_mask
             num_blocked = int(blocked.sum(dim=1).max().item())

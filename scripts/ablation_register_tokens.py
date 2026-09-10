@@ -3,9 +3,8 @@
 
 设计（Darcet et al. 2023, "Vision Transformers Need Registers"）：
   - 基线 K=0：原始 HF ViT 权重直接推理；
-  - K>0：在 CLS+patch 序列后拼接 K 个随机初始化 register token，
-    再过一遍全部 encoder 层（等价于训练时带 register 的前向，
-    这里 register 未训练，考察其对注意力分布的即时影响）；
+  - K>0：在第 0 层的 CLS+patch 序列后拼接 K 个随机初始化 register token，
+    共同经过一遍 encoder（标准 early 语义）；
   - 同一批 LIBERO 样本，抓最后一层 CLS→patch 注意力（头平均），
     计算分布指标并输出热力图。
 
@@ -69,14 +68,42 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def attention_metrics(cls_attn: np.ndarray, grid: int) -> dict[str, float]:
-    """cls_attn: [grid*grid] 已 softmax 的 CLS→patch 注意力。"""
-    a = cls_attn.astype(np.float64)
-    entropy = float(-(a * np.log(a + 1e-12)).sum())
-    k = max(1, int(a.size * 0.05))
-    top5 = float(np.sort(a)[-k:].sum())
-    grid_var = float(a.reshape(grid, grid).var())
-    return {"entropy": entropy, "top5_ratio": top5, "grid_var": grid_var}
+def attention_metrics(
+    patch_attn: np.ndarray,
+    register_attn: np.ndarray,
+    grid: int,
+) -> dict[str, float]:
+    patch = patch_attn.astype(np.float64)
+    register = register_attn.astype(np.float64)
+    patch_mass = float(patch.sum())
+    conditional = patch / max(patch_mass, 1e-12)
+    k = max(1, int(conditional.size * 0.05))
+    return {
+        "patch_mass": patch_mass,
+        "register_mass": float(register.sum()),
+        "patch_entropy": float(-(conditional * np.log(conditional + 1e-12)).sum()),
+        "patch_top5_ratio": float(np.sort(conditional)[-k:].sum()),
+        "patch_grid_var": float(conditional.reshape(grid, grid).var()),
+        "raw_patch_top5_mass": float(np.sort(patch)[-k:].sum()),
+    }
+
+
+def attention_projections(layer):
+    attention = layer.attention
+    candidates = (attention, getattr(attention, "attention", None))
+    for module in candidates:
+        if module is None:
+            continue
+        query = getattr(module, "q_proj", None)
+        key = getattr(module, "k_proj", None)
+        if query is None:
+            query = getattr(module, "query", None)
+        if key is None:
+            key = getattr(module, "key", None)
+        heads = getattr(module, "num_attention_heads", None)
+        if query is not None and key is not None and heads is not None:
+            return module, query, key, int(heads)
+    raise TypeError(f"Unsupported attention layout in {type(layer).__name__}.")
 
 
 def main() -> None:
@@ -107,6 +134,8 @@ def main() -> None:
     vision_cfg = VisionConfig(**{k: v for k, v in base_model_cfg["vision"].items() if k != "num_register_tokens"})
     vision_cfg.pretrained = True
     vision_cfg.trainable = True
+    vision_cfg.register_insert = "early"
+    model_cfg.vision = vision_cfg
     model_cfg.action_dim = 7
     model_cfg.state_dim = 8
 
@@ -139,22 +168,28 @@ def main() -> None:
         model.to(device).eval().requires_grad_(False)
 
         # 抓最后一层 CLS→patch 注意力
-        last_layer = model.vision_encoder.backbone.layers[-1]
+        last_layer = model.vision_encoder.encoder_layers()[-1]
+        attention_module, q_proj, k_proj, heads = attention_projections(last_layer)
         captured: list[torch.Tensor] = []
-        original_forward = last_layer.forward
+        original_forward = attention_module.forward
 
-        def patched(hidden_states, *_args, _layer=last_layer, _k=k, _cap=captured):
-            qkv = _layer.attention
-            head_dim = qkv.q_proj.out_features // qkv.num_attention_heads
+        def patched(
+            hidden_states,
+            *forward_args,
+            _cap=captured,
+            _original=original_forward,
+            **forward_kwargs,
+        ):
+            head_dim = q_proj.out_features // heads
             n = hidden_states.size(0)
-            q = qkv.q_proj(hidden_states).view(n, -1, qkv.num_attention_heads, head_dim).transpose(1, 2)
-            kk = qkv.k_proj(hidden_states).view(n, -1, qkv.num_attention_heads, head_dim).transpose(1, 2)
+            q = q_proj(hidden_states).view(n, -1, heads, head_dim).transpose(1, 2)
+            kk = k_proj(hidden_states).view(n, -1, heads, head_dim).transpose(1, 2)
             scores = q @ kk.transpose(-1, -2) / (head_dim**0.5)
             probs = scores.softmax(dim=-1)
             _cap.append(probs.mean(dim=1).detach().float().cpu())
-            return original_forward(hidden_states)
+            return _original(hidden_states, *forward_args, **forward_kwargs)
 
-        last_layer.forward = patched
+        attention_module.forward = patched
         try:
             per_sample = []
             for b_idx, batch in enumerate(batches):
@@ -183,14 +218,16 @@ def main() -> None:
                         for v in range(V):
                             flat = (b * Tp1 + t) * V + v
                             # CLS 对 patch+register 的注意力；只取 patch 部分
-                            cls_attn = attn[flat, 0, 1 : 1 + grid * grid].numpy()
-                            m = attention_metrics(cls_attn, grid)
+                            cls_attn = attn[flat, 0].numpy()
+                            patch_attn = cls_attn[1 : 1 + grid * grid]
+                            register_attn = cls_attn[1 + grid * grid :]
+                            m = attention_metrics(patch_attn, register_attn, grid)
                             m.update(episode=episode, frame=int(frames[t]), cam=v)
                             per_sample.append(m)
 
                             # 热力图（每个 K 只画前 6 个，避免文件爆炸）
                             if len([s for s in per_sample]) <= 6:
-                                heat = torch.from_numpy(cls_attn.reshape(grid, grid))[None, None]
+                                heat = torch.from_numpy(patch_attn.reshape(grid, grid))[None, None]
                                 heat = F.interpolate(heat, size=(256, 256), mode="bicubic", align_corners=False)[0, 0].numpy()
                                 img = images[b, t, v].permute(1, 2, 0).numpy()
                                 mean = np.array(processor.image_processor.image_mean).reshape(1, 1, -1)
@@ -215,17 +252,21 @@ def main() -> None:
                                 plt.close(fig)
                 print(f"[ablation] K={k}: batch {b_idx + 1}/{len(batches)}", flush=True)
         finally:
-            last_layer.forward = original_forward
+            attention_module.forward = original_forward
         results[k] = per_sample
 
     # —— 汇总指标 ——
     summary = {}
     for k, samples in results.items():
+        if not samples:
+            raise RuntimeError(f"No attention samples were collected for K={k}.")
         summary[k] = {
             "n": len(samples),
-            "entropy_mean": float(np.mean([s["entropy"] for s in samples])),
-            "top5_ratio_mean": float(np.mean([s["top5_ratio"] for s in samples])),
-            "grid_var_mean": float(np.mean([s["grid_var"] for s in samples])),
+            **{
+                f"{key}_mean": float(np.mean([sample[key] for sample in samples]))
+                for key in samples[0]
+                if key not in {"episode", "frame", "cam"}
+            },
         }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2), flush=True)

@@ -50,6 +50,7 @@ model:
   action_hidden_dim: 384
   predict_state_vector: false
   use_block_register_fusion: true
+  allow_noncausal_register_ablation: true  # block_size=2 仍有块内未来可见
   num_spatial_registers: 4
   num_temporal_registers: 4
   register_block_size: 2

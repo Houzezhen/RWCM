@@ -1,5 +1,5 @@
-# B8-noleak-seed42：无泄漏块融合版（block_size=2, leak=0）多 seed 复现，与 wcm_blockreg8_noleak.yaml 仅 seed/output_dir 不同
-output_dir: outputs/wcm_blockreg8_noleak_s42
+# 标准 early ViT register，seed=42；与 s3072 版本仅 seed/output_dir 不同。
+output_dir: /media/Data/user/WCM_outputs/wcm_reg4_early_exp_s42
 seed: 42
 epochs: 10
 per_device_batch_size: 8
@@ -14,11 +14,10 @@ save_every_epochs: 5
 expected_world_size: 1
 ddp_timeout_minutes: 30
 deterministic: false
-init_from: null
 
 data:
-  repo_id: data_toiletButton_merged_0814_with_return
-  root: /home/user/code_1/WCM/data_toiletButton_merged_0814_with_return
+  repo_id: data_toiletButton_0814_expanded_with_return
+  root: /home/user/.cache/huggingface/lerobot/test/data_toiletButton_0814_expanded_with_return
   revision: null
   image_keys:
     - observation.images.primary
@@ -49,18 +48,13 @@ model:
   dynamics_depth: 3
   action_hidden_dim: 384
   predict_state_vector: false
-  use_block_register_fusion: true
-  allow_noncausal_register_ablation: true  # block_size=2 仍有块内未来可见
-  num_spatial_registers: 4
-  num_temporal_registers: 4
-  register_block_size: 2
-  register_future_leak_ratio: 0.0
   vision:
     model_name: google/vit-base-patch16-224-in21k
     image_size: 224
     trainable: true
     pretrained: true
-    num_register_tokens: 0
+    num_register_tokens: 4
+    register_insert: early
   language:
     model_name: openai/clip-vit-base-patch32
     max_length: 77
@@ -79,9 +73,9 @@ loss:
   sigreg_num_projections: 1024
 
 optim:
+  register_lr_scale: 10.0
   lr: 1.0e-5
   weight_decay: 1.0e-3
   betas: [0.9, 0.95]
   warmup_steps: 300
   min_lr_ratio: 0.1
-  register_lr_scale: 10.0

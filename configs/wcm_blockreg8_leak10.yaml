@@ -51,6 +51,7 @@ model:
   action_hidden_dim: 384
   predict_state_vector: false
   use_block_register_fusion: true
+  allow_noncausal_register_ablation: true  # 历史泄漏诊断，不可作为可部署模型
   num_spatial_registers: 4
   num_temporal_registers: 4
   register_block_size: 2

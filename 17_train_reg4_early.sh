@@ -18,6 +18,12 @@ EOF
 )
 mkdir -p outputs/batch_logs
 
+echo "== ViT register 冒烟门禁 =="
+"$PYTHON" -m scripts.smoke_test_register_encoder --device cuda || {
+  echo "[abort] ViT register smoke test failed"
+  exit 1
+}
+
 if [[ -f "$OUT/metrics.jsonl" && $(wc -l < "$OUT/metrics.jsonl") -ge 10 ]]; then
   echo "[skip train] $OUT"
 else

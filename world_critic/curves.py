@@ -124,6 +124,7 @@ def write_episode_curve_artifacts(
     output_dir: str | Path,
     *,
     render_plots: bool = True,
+    max_plot_episodes: int | None = None,
 ) -> dict[str, Any]:
     """Write JSON/CSV and one value-vs-return PNG per episode.
 
@@ -173,7 +174,8 @@ def write_episode_curve_artifacts(
                 "or rerun evaluation with --no-episode-curves."
             ) from exc
 
-        for curve in curves:
+        plot_curves = curves if max_plot_episodes is None else curves[:max_plot_episodes]
+        for curve in plot_curves:
             episode_id = curve["episode_id"]
             frame_indices = curve["frame_indices"]
             values = curve["values"]

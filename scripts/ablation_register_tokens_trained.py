@@ -46,13 +46,45 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def attention_metrics(cls_attn: np.ndarray, grid: int) -> dict[str, float]:
-    a = cls_attn.astype(np.float64)
-    entropy = float(-(a * np.log(a + 1e-12)).sum())
-    k = max(1, int(a.size * 0.05))
-    top5 = float(np.sort(a)[-k:].sum())
-    grid_var = float(a.reshape(grid, grid).var())
-    return {"entropy": entropy, "top5_ratio": top5, "grid_var": grid_var}
+def attention_metrics(
+    patch_attn: np.ndarray,
+    register_attn: np.ndarray,
+    grid: int,
+) -> dict[str, float]:
+    """Separate register capture from concentration within the patch distribution."""
+    patch = patch_attn.astype(np.float64)
+    register = register_attn.astype(np.float64)
+    patch_mass = float(patch.sum())
+    register_mass = float(register.sum())
+    conditional = patch / max(patch_mass, 1e-12)
+    k = max(1, int(conditional.size * 0.05))
+    return {
+        "patch_mass": patch_mass,
+        "register_mass": register_mass,
+        "patch_entropy": float(-(conditional * np.log(conditional + 1e-12)).sum()),
+        "patch_top5_ratio": float(np.sort(conditional)[-k:].sum()),
+        "patch_grid_var": float(conditional.reshape(grid, grid).var()),
+        # Retain the historical quantity so old summaries remain comparable.
+        "raw_patch_top5_mass": float(np.sort(patch)[-k:].sum()),
+    }
+
+
+def attention_projections(layer):
+    attention = layer.attention
+    candidates = (attention, getattr(attention, "attention", None))
+    for module in candidates:
+        if module is None:
+            continue
+        query = getattr(module, "q_proj", None)
+        key = getattr(module, "k_proj", None)
+        if query is None:
+            query = getattr(module, "query", None)
+        if key is None:
+            key = getattr(module, "key", None)
+        heads = getattr(module, "num_attention_heads", None)
+        if query is not None and key is not None and heads is not None:
+            return module, query, key, int(heads)
+    raise TypeError(f"Unsupported attention layout in {type(layer).__name__}.")
 
 
 def main() -> None:
@@ -79,6 +111,7 @@ def main() -> None:
     model_cfg = ModelConfig(**{k: v for k, v in base_model_cfg.items() if k not in ("vision", "language")})
     model_cfg.language = LanguageConfig(**base_model_cfg["language"])
     vision_cfg = VisionConfig(**{k: v for k, v in base_model_cfg["vision"].items() if k != "num_register_tokens"})
+    model_cfg.vision = vision_cfg
     model_cfg.action_dim = full_cfg.get("model", {}).get("action_dim", 7)
     model_cfg.state_dim = full_cfg.get("model", {}).get("state_dim", 8)
 
@@ -115,26 +148,31 @@ def main() -> None:
         model_cfg_local.vision = VisionConfig(**{kk: vv for kk, vv in mc["vision"].items()})
         model = WorldCriticModel(model_cfg_local).to(device).eval().requires_grad_(False)
         sd = payload.get("model", payload)
-        missing, unexpected = model.load_state_dict(sd, strict=False)
-        print(f"[load] {name}: K={k} missing={len(missing)} unexpected={len(unexpected)}")
+        model.load_state_dict(sd, strict=True)
+        print(f"[load] {name}: K={k} strict checkpoint load passed")
 
-        last_layer = model.vision_encoder.backbone.layers[-1]
+        last_layer = model.vision_encoder.encoder_layers()[-1]
+        attention_module, q_proj, k_proj, heads = attention_projections(last_layer)
         captured: list[torch.Tensor] = []
-        original_forward = last_layer.forward
+        original_forward = attention_module.forward
 
-        def patched(hidden_states, *_args, _layer=last_layer, _cap=captured):
-            qkv = _layer.attention
-            n_tok_in = hidden_states.size(1)
-            head_dim = qkv.q_proj.out_features // qkv.num_attention_heads
+        def patched(
+            hidden_states,
+            *forward_args,
+            _cap=captured,
+            _original=original_forward,
+            **forward_kwargs,
+        ):
+            head_dim = q_proj.out_features // heads
             n = hidden_states.size(0)
-            q = qkv.q_proj(hidden_states).view(n, -1, qkv.num_attention_heads, head_dim).transpose(1, 2)
-            kk = qkv.k_proj(hidden_states).view(n, -1, qkv.num_attention_heads, head_dim).transpose(1, 2)
+            q = q_proj(hidden_states).view(n, -1, heads, head_dim).transpose(1, 2)
+            kk = k_proj(hidden_states).view(n, -1, heads, head_dim).transpose(1, 2)
             scores = q @ kk.transpose(-1, -2) / (head_dim ** 0.5)
             probs = scores.softmax(dim=-1)
             _cap.append(probs.mean(dim=1).detach().float().cpu())
-            return original_forward(hidden_states)
+            return _original(hidden_states, *forward_args, **forward_kwargs)
 
-        last_layer.forward = patched
+        attention_module.forward = patched
         per_sample = []
         try:
             for b_idx, batch in enumerate(batches):
@@ -148,43 +186,55 @@ def main() -> None:
                         instruction_attention_mask=b_dev["instruction_attention_mask"],
                         valid_mask=b_dev["valid_mask"],
                     )
-                # 每帧最后一层被调用两次：第一程 197（无寄存）、第二程 1+patch+K（含寄存）。
-                # captured 按帧序排列：K>0 时每帧 2 项 [f1_197, f1_201, f2_197, ...]，K=0 时每帧 1 项。
-                # 注意每项的 batch 维 = B*Tp1*V（整个扁平 batch 一次前向只调用一次每程），
-                # 所以帧 (b,t,v) 的第二程图 = captured[1][flat]（K>0）或 captured[0][flat]（K=0）
+                # early checkpoint 调用 encoder 一次；历史 late checkpoint 调用两次。
+                # 按 token 数选出包含 K 个寄存器的真实 attention 图。
                 images = batch["images"]
                 B, Tp1, V = images.shape[:3]
                 if k > 0:
-                    second_pass = next((a for a in captured if a.shape[-1] == 1 + 196 + k), None)
+                    register_attention = next(
+                        (a for a in captured if a.shape[-1] == 1 + 196 + k), None
+                    )
                 else:
-                    second_pass = next((a for a in captured if a.shape[-1] == 197), None)
-                if second_pass is None:
-                    raise RuntimeError(f"no {'second-pass' if k>0 else ''} attention captured: sizes={[a.shape[-1] for a in captured]}")
-                grid = int(round((second_pass.shape[-1] - 1 - k) ** 0.5))
-                n_patch = second_pass.shape[-1] - 1 - k
+                    register_attention = next((a for a in captured if a.shape[-1] == 197), None)
+                if register_attention is None:
+                    raise RuntimeError(
+                        f"no matching attention captured: sizes={[a.shape[-1] for a in captured]}"
+                    )
+                grid = int(round((register_attention.shape[-1] - 1 - k) ** 0.5))
+                n_patch = register_attention.shape[-1] - 1 - k
                 if grid * grid != n_patch:
-                    raise RuntimeError(f"token count {second_pass.shape[-1]} patch={n_patch} 非完全平方")
+                    raise RuntimeError(
+                        f"token count {register_attention.shape[-1]} patch={n_patch} 非完全平方"
+                    )
                 for b in range(B):
                     n_valid = int(batch["valid_mask"][b].sum())
                     for t in range(n_valid):
                         for v in range(V):
                             flat = (b * Tp1 + t) * V + v
                             # 帧索引 flat 直接在 batch 维上取（第二程图含全部帧）
-                            cls_attn = second_pass[flat, 0, 1: 1 + grid * grid].numpy()
-                            m = attention_metrics(cls_attn, grid)
+                            cls_attn = register_attention[flat, 0].numpy()
+                            patch_attn = cls_attn[1: 1 + grid * grid]
+                            register_attn = cls_attn[1 + grid * grid:]
+                            m = attention_metrics(patch_attn, register_attn, grid)
                             per_sample.append(m)
                 print(f"[{name}] batch {b_idx + 1}/{len(batches)} done", flush=True)
         finally:
-            last_layer.forward = original_forward
+            attention_module.forward = original_forward
 
+        if not per_sample:
+            raise RuntimeError(f"No attention samples were collected for {name}.")
         all_summary[name] = {
             "K": k,
             "n": len(per_sample),
-            "entropy_mean": float(np.mean([s["entropy"] for s in per_sample])),
-            "top5_ratio_mean": float(np.mean([s["top5_ratio"] for s in per_sample])),
-            "grid_var_mean": float(np.mean([s["grid_var"] for s in per_sample])),
+            **{
+                f"{key}_mean": float(np.mean([sample[key] for sample in per_sample]))
+                for key in per_sample[0]
+            },
         }
-        print(f"[{name}] top5_ratio_mean = {all_summary[name]['top5_ratio_mean']:.4f}")
+        print(
+            f"[{name}] register_mass={all_summary[name]['register_mass_mean']:.4f} "
+            f"patch_top5={all_summary[name]['patch_top5_ratio_mean']:.4f}"
+        )
         del model
         if device.type == "cuda":
             torch.cuda.empty_cache()

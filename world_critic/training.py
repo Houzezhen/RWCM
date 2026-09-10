@@ -506,4 +506,19 @@ def evaluate_loader(
 
 
 def config_from_checkpoint_payload(payload: dict[str, Any]) -> TrainConfig:
-    return _construct(TrainConfig, payload["config"])
+    values = payload["config"]
+    model = values.get("model", {})
+    if (
+        model.get("use_block_register_fusion", False)
+        and (
+            int(model.get("register_block_size", 1)) > 1
+            or float(model.get("register_future_leak_ratio", 0.0)) > 0
+        )
+        and "allow_noncausal_register_ablation" not in model
+    ):
+        # Old checkpoints predate the explicit safety flag. Preserve their
+        # evaluation/reproduction path without weakening new config validation.
+        values = dict(values)
+        values["model"] = dict(model)
+        values["model"]["allow_noncausal_register_ablation"] = True
+    return _construct(TrainConfig, values)
