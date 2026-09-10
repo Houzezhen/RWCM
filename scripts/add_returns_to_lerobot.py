@@ -471,6 +471,12 @@ def parser() -> argparse.ArgumentParser:
             "global_minmax (legacy H5-compatible global [-1,1] scaling), or none."
         ),
     )
+    result.add_argument(
+        "--task-max-override",
+        type=int,
+        default=None,
+        help="Pin the task_max normalization length instead of deriving it from the longest episode (keeps the return scale aligned with a previously trained dataset).",
+    )
     result.add_argument("--skip-recompute-stats", action="store_true")
     result.add_argument("--num-workers", type=int, default=0)
     return result
@@ -603,6 +609,7 @@ def compute_pi06_returns(
     step_index: np.ndarray | None = None,
     step_scale: float = 1.0,
     normalization: str | None = None,
+    task_max_override: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[int, int]]:
     # ``normalize`` was the original small public helper's boolean argument.
     # Keep it source-compatible for callers/tests while exposing the explicit
@@ -663,6 +670,11 @@ def compute_pi06_returns(
                 )
         task = task_by_episode[episode]
         task_max_length[task] = max(task_max_length[task], len(rows))
+
+    if task_max_override is not None:
+        if task_max_override <= 0:
+            raise ValueError("task_max_override must be positive.")
+        task_max_length = {task: int(task_max_override) for task in task_max_length}
 
     unknown_labels = set(map(int, success_by_episode)) - set(rows_by_episode)
     if unknown_labels:
@@ -885,6 +897,7 @@ def main() -> None:
         normalization=args.normalization,
         step_index=step_index,
         step_scale=args.step_scale,
+        task_max_override=getattr(args, "task_max_override", None),
     )
     for field in ("return", "return_raw"):
         if field in source.features or field in column_names(source):

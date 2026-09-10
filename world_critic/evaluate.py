@@ -46,6 +46,11 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Distributed offline value/dynamics evaluation.")
     result.add_argument("--checkpoint", required=True)
     result.add_argument("--output-dir", required=True)
+    result.add_argument(
+        "--dataset-root",
+        default=None,
+        help="Override the dataset root stored in the checkpoint config (e.g. OOD test set).",
+    )
     result.add_argument("--split", choices=["train", "val", "all"], default="val")
     result.add_argument("--batch-size", type=int, default=64)
     result.add_argument("--num-workers", type=int, default=8)
@@ -144,6 +149,8 @@ def run() -> None:
         def build_and_validate_config() -> None:
             nonlocal train_config
             train_config = apply_runtime_overrides(config_from_checkpoint_payload(payload))
+            if args.dataset_root:
+                train_config.data.root = Path(args.dataset_root).expanduser().resolve()
             validate_train_config(train_config)
 
         log("validating checkpoint config...")

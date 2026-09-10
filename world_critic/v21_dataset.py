@@ -177,7 +177,16 @@ class LeRobotV21Dataset:
         sample = dict(self._episode_rows(episode)[row_in_episode])
         frame_index = int(sample["frame_index"])
         for key, feature in self.features.items():
-            if _feature_dtype(feature) == "video":
+            dtype = _feature_dtype(feature)
+            if dtype == "video":
                 sample[key] = self._video_frame(episode, key, frame_index)
+            elif dtype == "image" and isinstance(sample.get(key), dict) and "bytes" in sample[key]:
+                # v2.0/内嵌 image 列：dict{bytes,path}，解码为 HWC uint8
+                import io
+
+                from PIL import Image as PILImage
+
+                with PILImage.open(io.BytesIO(sample[key]["bytes"])) as handle:
+                    sample[key] = np.asarray(handle.convert("RGB"))
         sample["task"] = self._task_by_index[self._task_by_episode[episode]]
         return sample

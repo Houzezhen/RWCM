@@ -40,6 +40,17 @@ class VisionConfig:
     image_size: int = 224
     trainable: bool = True
     pretrained: bool = True
+    # ViT register tokens（Darcet et al. 2023）：追加 K 个可学习全局 token，
+    # 前向时拼到序列里参与 attention，输出时丢弃，用于吸收全局信息、
+    # 缓解 CLS/patch 注意力中的 artifact，改善空间注意力分布。
+    num_register_tokens: int = 0
+    # 寄存器插入位置：
+    #   early = 第 0 层输入即拼入序列、随全部层一遍流动（Darcet et al. 标准
+    #           语义；深度/算力与无寄存 baseline 严格一致）；
+    #   late  = backbone 完整 forward 后把寄存器拼到输出、再过一遍全部层
+    #           （旧行为，等效双倍深度——历史 D2 结果带该混淆，见实验报告 §8.3；
+    #           保留默认值以保证旧 checkpoint 可复现）。
+    register_insert: str = "late"
 
 
 @dataclass
@@ -68,6 +79,19 @@ class ModelConfig:
     dynamics_depth: int = 3
     action_hidden_dim: int = 384
     predict_state_vector: bool = False
+    # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
+    # 通过交叉注意力从历史帧 token 中吸收时序不变信息再注回各时间步。
+    # 与 vision.num_register_tokens（空间 register，ViT 内部）相互独立，可分别消融。
+    num_temporal_registers: int = 0
+    # 块注意力 register 融合：K_s 个空间寄存 + K_t 个时间寄存进入同一注意力层，
+    # 时间维块内双向、块间因果（BlockRegisterFusion）。开启后取代独立的
+    # TemporalRegisterBlock 与 ViT 内 register（建议 vision.num_register_tokens=0）。
+    num_spatial_registers: int = 0
+    register_block_size: int = 2
+    use_block_register_fusion: bool = False
+    # 块间因果的稀疏未来泄漏比例（0=严格因果；0.05 表示随机放行 5% 被屏蔽的
+    # 未来 token，BigBird 式随机注意力，训练期提供少量前瞻信息）
+    register_future_leak_ratio: float = 0.0
     vision: VisionConfig = field(default_factory=VisionConfig)
     language: LanguageConfig = field(default_factory=LanguageConfig)
 
@@ -89,6 +113,9 @@ class OptimConfig:
     betas: tuple[float, float] = (0.9, 0.95)
     warmup_steps: int = 1000
     min_lr_ratio: float = 0.1
+    # register token 单独学习率缩放（相对 base lr）。>1 让新加入的 register
+    # embedding 冷启动更快；仅对名称含 "register_tokens" 的参数生效。
+    register_lr_scale: float = 1.0
 
 
 @dataclass
@@ -108,6 +135,8 @@ class TrainConfig:
     eval_every_epochs: int = 1
     save_every_epochs: int = 1
     resume: str | None = None
+    # Warm-start：仅加载模型权重（不校验 config、不恢复 optimizer/scheduler/RNG），用于换数据集微调。
+    init_from: str | None = None
     compile: bool = False
     expected_world_size: int | None = None
     ddp_timeout_minutes: int = 30

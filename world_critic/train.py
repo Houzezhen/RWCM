@@ -12,9 +12,11 @@ from tqdm import tqdm
 from .checkpoint import (
     collectively_validate,
     inspect_checkpoint_config,
+    load_checkpoint_payload,
     load_training_checkpoint,
     save_deploy_bundle,
     save_training_checkpoint,
+    unwrap_model,
 )
 from .config import (
     apply_runtime_overrides,
@@ -331,6 +333,11 @@ def run() -> None:
         start_epoch = 0
         global_step = 0
         best_metric = math.inf
+        if config.init_from:
+            payload = load_checkpoint_payload(config.init_from, ctx)
+            unwrap_model(model).load_state_dict(payload["model"], strict=True)
+            if ctx.is_main:
+                print(json.dumps({"init_from": config.init_from, "epoch": payload.get("epoch")}))
         if config.resume:
             checkpoint = load_training_checkpoint(
                 config.resume,

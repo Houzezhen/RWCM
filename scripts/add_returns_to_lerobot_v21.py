@@ -271,6 +271,8 @@ def parser() -> argparse.ArgumentParser:
         choices=("task_max", "global_minmax", "none"),
     )
     p.add_argument("--step-scale", type=float, default=1.0)
+    p.add_argument("--task-max-override", type=int, default=None,
+                   help="Pin task_max normalization length instead of deriving from the longest episode")
     p.add_argument("--step-key", default="frame_index")
     return p
 
@@ -312,6 +314,13 @@ def main() -> None:
 
     # The v2.1 parquet already carries task_index per row; trust it when it
     # agrees with tasks.jsonl, otherwise use the metadata mapping.
+    # When the same task text appears under multiple task_index values (e.g.
+    # environment variants), the text alone is ambiguous -> trust the parquet.
+    from collections import Counter as _Counter
+
+    task_text_counts = _Counter(tasks.values())
+    ambiguous_texts = {text for text, count in task_text_counts.items() if count > 1}
+    episodes_by_index = {int(ep["episode_index"]): ep for ep in episodes}
     task_index = parquet_task_index.copy()
     for episode in np.unique(episode_index):
         expected = ep_to_task.get(int(episode))
@@ -319,9 +328,13 @@ def main() -> None:
             raise ValueError(f"episode_index={int(episode)} missing from episodes.jsonl.")
         rows = np.flatnonzero(episode_index == episode)
         if not np.all(parquet_task_index[rows] == expected):
+            ep_task_text = str((episodes_by_index[int(episode)].get("tasks") or [""])[0])
+            if ep_task_text in ambiguous_texts:
+                continue
             raise ValueError(
                 f"episode_index={int(episode)}: parquet task_index disagrees with tasks.jsonl."
             )
+
 
     # 4. Success labels.
     success_by_episode: dict[int, bool]
@@ -353,6 +366,7 @@ def main() -> None:
         normalization=args.normalization,
         step_index=step_index,
         step_scale=args.step_scale,
+        task_max_override=getattr(args, "task_max_override", None),
     )
 
     success_rows = np.asarray(

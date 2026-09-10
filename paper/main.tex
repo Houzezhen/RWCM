@@ -1,0 +1,91 @@
+% !TeX program = tectonic
+\documentclass[10pt,a4paper]{article}
+
+% ---------- 中文 ----------
+\usepackage[UTF8,fontset=none]{ctex}
+\setCJKmainfont{Noto Serif CJK SC}[BoldFont=Noto Serif CJK SC Bold]
+\setCJKsansfont{Noto Sans CJK SC}[BoldFont=Noto Sans CJK SC Bold]
+\setCJKmonofont{Noto Sans CJK SC}[BoldFont=Noto Sans CJK SC Bold]
+
+% ---------- 版面 ----------
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=green!40!black,urlcolor=blue!60!black]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+
+% ---------- 常用缩写 ----------
+\newcommand{\mse}{\mathrm{MSE}}
+\newcommand{\reg}{register token}
+\newcommand{\Regs}{register tokens}
+
+\title{\textbf{寄存 token 在机器人价值模型中的变体消融：\\位置、时序拓扑与因果泄漏}}
+\author{WCM 项目}
+\date{2026 年 9 月}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+空间寄存器（register tokens, Darcet et al.\ 2023）已被证明可缓解视觉 Transformer 的注意力伪影。
+本文在机器人操作的价值模型（value model）上，系统消融\Regs{} 的四种变体：
+ViT 内空间放置（D2）、latent 层前缀读出、双处独立注入、以及块因果注意力中的同层融合（块粒度可调）。
+在严格因果约束下，三 seed 重复实验与 27{,}727 窗口的独立同分布测试集表明：
+(i) 各寄存变体相对无寄存基线\textbf{无显著增益}（差异与 seed 方差同量级）；
+(ii) 训练期 SOTA 表现主要来自注意力掩码中 5\% 的随机未来泄漏与块内双向的确定性泄漏——
+价值预测任务对微小因果破缺的敏感度远超自监督任务；
+(iii) 旧评估口径（724 窗口 val、单 seed early-stop）会将上述噪声量级差异夸大为 10\%--26\% 的"结构收益"。
+我们据此给出时序 value 学习中结构消融的评估方法论：独立测试集、多 seed 均值、以及默认执行的泄漏消融。
+\end{abstract}
+
+\section{引言}
+% 要点：
+% 1. 寄存 token 的已知收益（Darcet/VGGT）均在感知/几何任务、大数据、多任务
+% 2. value 模型（预测未来回报）对时序因果与容量分配的敏感性不同
+% 3. 贡献：(a) 变体系统消融 (b) 块粒度=泄漏深度旋钮 (c) 评估方法论警示
+
+\section{相关工作}
+\subsection{寄存 token 与注意力伪影}
+% Darcet 2023, VGGT (CVPR 2025 best paper)：每视角 1 相机 + 4 寄存
+\subsection{块因果注意力与稀疏化}
+% LeVJEPA：块=单帧、无精度代价（自监督不变性）；BigBird 随机注意力；
+% 辨析：输入端 token dropping（保因果） vs 因果图随机加边（破坏因果）
+\subsection{价值模型与泄漏}
+% 价值=未来回报的函数；泄漏虚增同分布精度
+
+\section{方法}
+\subsection{基线与变体}
+% 表：前缀读出 / 双处注入 / 块融合(bs=2) / 单块(bs=1) / D2(ViT 内)
+\subsection{块因果注意力掩码与泄漏机制}
+% 块内双向=深度1帧确定性泄漏；随机放行 p∈{0,1%,5%,10%}
+\subsection{训练配置}
+% seed/数据/损失/lr 分组，10ep 定版
+
+\section{实验}
+\subsection{评估口径}
+% (1) val 724 窗口（旧口径，保留以对照）
+% (2) 独立同分布测试集：0814 同日不同批次 145 集、27727 窗口、task_max=344
+% (3) OOD：0722 加板子 125 集 21832 窗口
+\subsection{多 seed 结果}
+% 表：三变体 × 3 seed，best mse + ep2-9 均值 ± std（待填）
+\subsection{泄漏剂量-响应}
+% 表/图：p=0/1%/5%/10% → 同分布 mse / 独立测试 mse / Pearson（待填）
+\subsection{独立测试集重排}
+% 表：旧 val 排序 vs 5cut 排序对比（待填）
+\subsection{OOD 泛化}
+
+\section{讨论}
+% 寄存增益的边界条件：小数据(50集)/单任务/容量过剩 → 正则主导区间
+% value 任务 vs 自监督任务的因果敏感性差异
+
+\section{结论}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

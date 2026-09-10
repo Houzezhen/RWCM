@@ -1,6 +1,0 @@
-/home/user/code_1/WCM/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:174: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 304: OS call failed or operation not supported on this OS (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:109.)
-  return torch._C._cuda_getDeviceCount() > 0
-[launcher] torch=2.7.1+cu126 cuda=12.6 cuda_available=False visible_devices=0 device=CPU
-/home/user/code_1/WCM/.venv/lib/python3.12/site-packages/torch/cuda/__init__.py:174: UserWarning: CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before calling NumCudaDevices() that might have already set an error? Error 304: OS call failed or operation not supported on this OS (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:109.)
-  return torch._C._cuda_getDeviceCount() > 0
-GPUS=1 requires at least one visible CUDA device. Set ALLOW_CPU_SMOKE=1 only for an intentional CPU smoke test.

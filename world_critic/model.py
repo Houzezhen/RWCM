@@ -69,6 +69,21 @@ class VisionEncoder(nn.Module):
             nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, config.latent_dim),
         )
+        self.num_register_tokens = int(getattr(config.vision, "num_register_tokens", 0))
+        self.register_insert = str(getattr(config.vision, "register_insert", "late")).lower()
+        if self.register_insert not in ("early", "late"):
+            raise ValueError(
+                f"vision.register_insert must be 'early' or 'late', got {self.register_insert!r}."
+            )
+        if self.num_register_tokens > 0:
+            if not vision_config.trainable:
+                raise ValueError("register tokens require a trainable vision backbone.")
+            self.register_tokens = nn.Parameter(
+                torch.zeros(1, self.num_register_tokens, hidden_dim)
+            )
+            nn.init.normal_(self.register_tokens, std=0.02)
+        else:
+            self.register_tokens = None
         self.camera_embedding = nn.Parameter(
             torch.zeros(1, 1, config.max_views, config.latent_dim)
         )
@@ -103,12 +118,47 @@ class VisionEncoder(nn.Module):
         kwargs = {"pixel_values": flat}
         if "interpolate_pos_encoding" in parameters:
             kwargs["interpolate_pos_encoding"] = True
-        if self.trainable:
-            output = self.backbone(**kwargs)
-        else:
-            with torch.no_grad():
+        if self.register_tokens is None:
+            if self.trainable:
                 output = self.backbone(**kwargs)
-        hidden = output.last_hidden_state if hasattr(output, "last_hidden_state") else output[0]
+            else:
+                with torch.no_grad():
+                    output = self.backbone(**kwargs)
+            hidden = output.last_hidden_state if hasattr(output, "last_hidden_state") else output[0]
+        elif self.register_insert == "early":
+            # 标准寄存器语义（Darcet et al. 2023）：K 个寄存器在第 0 层输入
+            # 就拼入 CLS+patch 序列，随全部层一遍流动；输出过 backbone 的
+            # final LayerNorm 后取前 1+N 个位置（CLS+patch），寄存器丢弃。
+            # 深度/算力与无寄存 baseline 严格一致（修复旧 late 路径的
+            # 双倍深度混淆，见实验报告 §8.3）。
+            embeddings_kwargs = {"pixel_values": flat}
+            if "interpolate_pos_encoding" in inspect.signature(
+                self.backbone.embeddings.forward
+            ).parameters:
+                embeddings_kwargs["interpolate_pos_encoding"] = True
+            hidden = self.backbone.embeddings(**embeddings_kwargs)
+            tokens = torch.cat(
+                [hidden, self.register_tokens.expand(hidden.size(0), -1, -1)], dim=1
+            )
+            for module in self.backbone.layers:
+                tokens = module(tokens)
+            hidden = self.backbone.layernorm(tokens)
+        else:
+            # late（旧行为，默认）：backbone 完整 forward 后，把寄存器拼到
+            # last_hidden_state 末尾再过一遍全部 encoder 层（等效双倍深度，
+            # 且缺 final LayerNorm）。保留以兼容旧 checkpoint 与复现旧结果。
+            if self.trainable:
+                output = self.backbone(**kwargs)
+            else:
+                with torch.no_grad():
+                    output = self.backbone(**kwargs)
+            hidden = output.last_hidden_state if hasattr(output, "last_hidden_state") else output[0]
+            tokens = torch.cat(
+                [hidden, self.register_tokens.expand(hidden.size(0), -1, -1)], dim=1
+            )
+            for module in self.backbone.layers:
+                tokens = module(tokens)
+            hidden = tokens
         frame_latent = self.projection(hidden[:, 0])
         frame_latent = frame_latent.view(batch, time, views, -1)
         return frame_latent + self.camera_embedding[:, :, :views]
@@ -275,6 +325,130 @@ def causal_mask(length: int, device: torch.device) -> torch.Tensor:
     return torch.triu(torch.ones(length, length, dtype=torch.bool, device=device), diagonal=1)
 
 
+class TemporalRegisterBlock(nn.Module):
+    """时间维 register token（因果版）：跨时间步共享的 token 吸收时序不变信息。
+
+    因果约束：实际部署时第 t 帧只能看到 0..t，因此每个时间步 t 只允许
+    register 读取前缀 0..t（attn_mask 屏蔽未来 key），读出信息残差注回
+    该帧自身。register 参数在任意前缀长度下共享同一组（跨时间步不变），
+    输出只保留注回后的 state token。
+    """
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        self.num_registers = config.num_temporal_registers
+        self.registers = nn.Parameter(torch.zeros(1, self.num_registers, config.latent_dim))
+        nn.init.normal_(self.registers, std=0.02)
+        self.reg_norm = nn.LayerNorm(config.latent_dim)
+        self.state_norm = nn.LayerNorm(config.latent_dim)
+        self.read_attn = nn.MultiheadAttention(
+            config.latent_dim, config.trunk_heads, dropout=config.dropout, batch_first=True
+        )
+        self.write_norm = nn.LayerNorm(config.latent_dim)
+        self.write_proj = nn.Linear(config.num_temporal_registers, 1)
+
+    def forward(self, state_tokens: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
+        # state_tokens: [B,T,D]（已加 time embedding），valid_mask: [B,T]
+        batch, time, dim = state_tokens.shape
+        registers = self.num_registers
+        # 每个时间步 t 都用自己的前缀读取：同一组共享 register 复制到每个 t -> [B, T*K, D]
+        query = self.registers.expand(batch, time, registers, dim).reshape(batch, time * registers, dim)
+        # 因果 prefix mask：[T*K, T]，行 (t,k) 屏蔽未来 key j>t
+        # 注意 attn_mask 语义为 True=屏蔽（与 causal_mask 一致）
+        row_time = torch.arange(time * registers, device=state_tokens.device) // registers
+        col_time = torch.arange(time, device=state_tokens.device)
+        prefix_mask = row_time[:, None] < col_time[None, :]
+        read, _ = self.read_attn(
+            self.reg_norm(query),
+            self.state_norm(state_tokens),
+            self.state_norm(state_tokens),
+            attn_mask=prefix_mask,
+            key_padding_mask=~valid_mask.bool(),
+            need_weights=False,
+        )
+        # read: [B, T*K, D] -> 按时间步展开，沿 K 个 register 池化为单向量，残差注回对应帧
+        injection = self.write_proj(
+            self.write_norm(read).reshape(batch, time, registers, dim).permute(0, 1, 3, 2)
+        ).squeeze(-1)
+        return state_tokens + injection
+
+
+class BlockRegisterFusion(nn.Module):
+    """块注意力融合时空 register：时间维块内双向、块间因果（可选稀疏未来泄漏）。
+
+    每个时间步的 token 组 = [state ｜ K_s 个空间寄存 ｜ K_t 个时间寄存]
+    （寄存 token 参数跨时间步共享）。按时间切块（block_size 帧/块）：
+      - 块内：所有 token（含两类寄存）双向全可见——时空寄存在此融合；
+      - 块间：只允许看 ≤ 当前块（时间因果，对齐部署可见性）；
+      - future_leak_ratio > 0 时：被屏蔽的未来 token 随机放行该比例
+        （BigBird 式随机注意力，训练期提供少量前瞻信息，推理期未来
+        token 不存在时这些位置由 key_padding 屏蔽，不产生额外开销）。
+    输出丢弃全部寄存 token，只保留注回后的 state token。
+    """
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        self.num_spatial = config.num_spatial_registers
+        self.num_temporal = config.num_temporal_registers
+        self.block_size = config.register_block_size
+        self.future_leak_ratio = config.register_future_leak_ratio
+        self.tokens_per_step = 1 + self.num_spatial + self.num_temporal
+        self.spatial_registers = nn.Parameter(
+            torch.zeros(1, self.num_spatial, config.latent_dim)
+        )
+        self.temporal_registers = nn.Parameter(
+            torch.zeros(1, self.num_temporal, config.latent_dim)
+        )
+        nn.init.normal_(self.spatial_registers, std=0.02)
+        nn.init.normal_(self.temporal_registers, std=0.02)
+        self.norm = nn.LayerNorm(config.latent_dim)
+        self.attn = nn.MultiheadAttention(
+            config.latent_dim, config.trunk_heads, dropout=config.dropout, batch_first=True
+        )
+        self.out_norm = nn.LayerNorm(config.latent_dim)
+
+    def forward(self, state_tokens: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
+        # state_tokens: [B,T,D]，valid_mask: [B,T]
+        batch, time, dim = state_tokens.shape
+        device = state_tokens.device
+        regs = torch.cat([self.spatial_registers, self.temporal_registers], dim=1)  # [1,K,D]
+        # 每时间步交错排布 [state | regs] -> [B, T, 1+K, D] -> 展平 [B, T*(1+K), D]
+        steps = torch.cat(
+            [state_tokens.unsqueeze(2), regs.expand(batch, time, -1, dim)], dim=2
+        )
+        tokens = steps.reshape(batch, time * self.tokens_per_step, dim)
+        # 块因果 mask：行 i 的块 = (i // tokens_per_step) // block_size
+        row_pos = torch.arange(time * self.tokens_per_step, device=device) // self.tokens_per_step
+        col_pos = torch.arange(time * self.tokens_per_step, device=device) // self.tokens_per_step
+        row_block = row_pos // self.block_size
+        col_block = col_pos // self.block_size
+        # True=屏蔽：行所在块 < 列所在块（列在未来块）
+        attn_mask = row_block[:, None] < col_block[None, :]
+        # 稀疏未来泄漏：对被屏蔽的未来位置按比例随机放行（确定性采样，训练/推理一致）
+        if self.future_leak_ratio > 0.0:
+            blocked = attn_mask
+            num_blocked = int(blocked.sum(dim=1).max().item())
+            if num_blocked > 0:
+                generator = torch.Generator(device="cpu").manual_seed(0)
+                keep = (
+                    torch.rand(blocked.shape, generator=generator) < self.future_leak_ratio
+                ).to(device)
+                attn_mask = blocked & ~keep
+        # key_padding：无效时间步的所有 token（state+寄存）都屏蔽
+        step_valid = valid_mask.bool()[:, :, None].expand(batch, time, self.tokens_per_step)
+        key_padding = ~step_valid.reshape(batch, time * self.tokens_per_step)
+        out, _ = self.attn(
+            self.norm(tokens), self.norm(tokens), self.norm(tokens),
+            attn_mask=attn_mask, key_padding_mask=key_padding, need_weights=False,
+        )
+        out = self.out_norm(out).reshape(batch, time, self.tokens_per_step, dim)
+        return state_tokens + out[:, :, 0]
+
+    @property
+    def num_registers_total(self) -> int:
+        return self.num_spatial + self.num_temporal
+
+
 class ActionFreeContextTrunk(nn.Module):
     """Causal history model. Its signature deliberately has no action argument."""
 
@@ -424,6 +598,12 @@ class WorldCriticModel(nn.Module):
             config.latent_dim, config.trunk_heads, dropout=config.dropout, batch_first=True
         )
         self.language_fusion = StateLanguageFusion(config)
+        self.temporal_registers = None
+        self.block_register_fusion = None
+        if config.use_block_register_fusion:
+            self.block_register_fusion = BlockRegisterFusion(config)
+        elif config.num_temporal_registers > 0:
+            self.temporal_registers = TemporalRegisterBlock(config)
         self.context_trunk = ActionFreeContextTrunk(config)
         self.value_head = MLP(config.latent_dim, config.value_hidden_dim, 1, config.dropout)
         self.dynamics = ActionConditionedDynamics(config)
@@ -454,6 +634,10 @@ class WorldCriticModel(nn.Module):
         valid_mask: torch.Tensor,
     ) -> torch.Tensor:
         fused = self.language_fusion(current_state_latent, instruction_tokens, instruction_mask)
+        if self.block_register_fusion is not None:
+            fused = self.block_register_fusion(fused, valid_mask)
+        elif self.temporal_registers is not None:
+            fused = self.temporal_registers(fused, valid_mask)
         return self.context_trunk(fused, valid_mask)
 
     def forward(
