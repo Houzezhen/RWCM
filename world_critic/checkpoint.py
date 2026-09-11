@@ -10,7 +10,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from .config import TrainConfig
+from .config import LossConfig, TrainConfig
 from .distributed import DistributedContext, broadcast_object, gather_objects
 
 
@@ -172,6 +172,21 @@ def load_training_checkpoint(
                 saved["model"]["allow_noncausal_register_ablation"] = current["model"][
                     "allow_noncausal_register_ablation"
                 ]
+            saved_loss = saved.get("loss", {})
+            ranking_defaults = (
+                "ranking_weight",
+                "ranking_temperature",
+                "ranking_min_target_gap",
+            )
+            if any(key not in saved_loss for key in ranking_defaults):
+                # Ranking supervision was added after the original baseline
+                # runs.  Missing fields represent the disabled/default loss,
+                # so historical checkpoints remain resumable.
+                saved = dict(saved)
+                saved["loss"] = dict(saved_loss)
+                default_loss = asdict(LossConfig())
+                for key in ranking_defaults:
+                    saved["loss"].setdefault(key, default_loss[key])
             immutable_paths = [
                 ("data", "repo_id"),
                 ("data", "root"),

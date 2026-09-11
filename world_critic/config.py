@@ -102,6 +102,13 @@ class ModelConfig:
 @dataclass
 class LossConfig:
     value_weight: float = 1.0
+    # RankNet-style ordering objective over the final valid value in each
+    # training window.  This complements absolute MSE with a calibration-
+    # invariant signal: examples with meaningfully different returns should
+    # be ordered the same way by the critic.
+    ranking_weight: float = 0.0
+    ranking_temperature: float = 0.1
+    ranking_min_target_gap: float = 0.1
     next_state_weight: float = 0.1
     next_state_vector_weight: float = 0.0
     sigreg_weight: float = 0.01
@@ -393,6 +400,10 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("loss.sigreg_knots must be at least 2.")
     if config.loss.sigreg_num_projections < 1:
         raise ValueError("loss.sigreg_num_projections must be positive.")
+    if config.loss.ranking_temperature <= 0:
+        raise ValueError("loss.ranking_temperature must be positive.")
+    if config.loss.ranking_min_target_gap < 0:
+        raise ValueError("loss.ranking_min_target_gap cannot be negative.")
     if config.gradient_accumulation_steps < 1:
         raise ValueError("gradient_accumulation_steps must be positive.")
     if config.per_device_batch_size < 1 or config.eval_batch_size < 1:
@@ -401,6 +412,7 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("precision must be fp32 or bf16; fp16 is disabled without GradScaler support.")
     for name in (
         "value_weight",
+        "ranking_weight",
         "next_state_weight",
         "next_state_vector_weight",
         "sigreg_weight",

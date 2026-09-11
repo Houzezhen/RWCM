@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 import torch.distributed as dist
 import torch.distributed.nn.functional as dist_nn
 from torch.nn.parallel import DistributedDataParallel
@@ -162,6 +163,50 @@ def wrap_ddp(model: torch.nn.Module, ctx: DistributedContext) -> torch.nn.Module
     return DistributedDataParallel(model, **kwargs)
 
 
+def pairwise_ranking_sum(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    *,
+    temperature: float,
+    min_target_gap: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return a RankNet loss sum/count over unordered, non-tied pairs.
+
+    Higher supervised return means higher value.  Pair selection is based only
+    on detached targets, while gradients flow through both predictions.  The
+    caller performs global-count normalization so DDP retains true mean-loss
+    semantics.
+    """
+
+    prediction = prediction.reshape(-1)
+    target = target.reshape(-1).detach()
+    if prediction.shape != target.shape:
+        raise ValueError(
+            f"Ranking prediction/target shapes differ: {prediction.shape} vs {target.shape}"
+        )
+    if prediction.numel() < 2:
+        return prediction.sum() * 0.0, prediction.new_zeros((), dtype=torch.float64)
+
+    row, col = torch.triu_indices(
+        prediction.numel(), prediction.numel(), offset=1, device=prediction.device
+    )
+    target_delta = target[row] - target[col]
+    finite = (
+        torch.isfinite(prediction[row])
+        & torch.isfinite(prediction[col])
+        & torch.isfinite(target_delta)
+    )
+    selected = finite & (target_delta.abs() >= min_target_gap)
+    pair_count = selected.sum().to(dtype=torch.float64)
+    if not selected.any():
+        return prediction.sum() * 0.0, pair_count
+
+    direction = target_delta[selected].sign()
+    prediction_delta = prediction[row[selected]] - prediction[col[selected]]
+    losses = F.softplus(-direction * prediction_delta / temperature)
+    return losses.sum(), pair_count
+
+
 def compute_losses(
     output,
     batch: dict[str, Any],
@@ -177,6 +222,31 @@ def compute_losses(
     global_value_sum = value_sum.detach().double()
     all_reduce_sum(global_value_sum, ctx)
     value_metric = global_value_sum / global_value_count.clamp_min(1)
+
+    ranking_loss = output.value.new_zeros(())
+    ranking_metric = output.value.new_zeros((), dtype=torch.float64)
+    global_ranking_count = output.value.new_zeros((), dtype=torch.float64)
+    if loss_config.ranking_weight > 0:
+        valid_steps = output.valid_mask.bool()
+        positions = torch.arange(
+            valid_steps.size(1), device=valid_steps.device
+        ).expand_as(valid_steps)
+        last_index = positions.masked_fill(~valid_steps, -1).max(dim=1).values
+        if (last_index < 0).any():
+            raise ValueError("Ranking loss requires at least one valid timestep per window.")
+        row_index = torch.arange(valid_steps.size(0), device=valid_steps.device)
+        ranking_sum, ranking_count = pairwise_ranking_sum(
+            output.value[row_index, last_index],
+            return_target[row_index, last_index],
+            temperature=loss_config.ranking_temperature,
+            min_target_gap=loss_config.ranking_min_target_gap,
+        )
+        ranking_loss, global_ranking_count = ddp_global_mean_loss(
+            ranking_sum, ranking_count, ctx
+        )
+        global_ranking_sum = ranking_sum.detach().double()
+        all_reduce_sum(global_ranking_sum, ctx)
+        ranking_metric = global_ranking_sum / global_ranking_count.clamp_min(1)
 
     state_valid = valid.expand_as(output.next_state_pred)
     state_sum, state_count = masked_squared_error(
@@ -219,12 +289,14 @@ def compute_losses(
 
     total = (
         loss_config.value_weight * value_loss
+        + loss_config.ranking_weight * ranking_loss
         + loss_config.next_state_weight * state_loss
         + loss_config.next_state_vector_weight * vector_loss
         + loss_config.sigreg_weight * sigreg_loss
     )
     total_metric = (
         loss_config.value_weight * value_metric
+        + loss_config.ranking_weight * ranking_metric
         + loss_config.next_state_weight * state_metric
         + loss_config.next_state_vector_weight * vector_metric
         + loss_config.sigreg_weight * sigreg_loss.detach().double()
@@ -232,10 +304,12 @@ def compute_losses(
     return total, {
         "loss": total_metric,
         "value_loss": value_metric,
+        "ranking_loss": ranking_metric,
         "next_state_loss": state_metric,
         "next_state_vector_loss": vector_metric,
         "sigreg_loss": sigreg_loss.detach(),
         "global_value_count": global_value_count.detach(),
+        "global_ranking_count": global_ranking_count.detach(),
         "global_state_count": global_state_count.detach(),
         "global_vector_count": global_vector_count.detach(),
     }
