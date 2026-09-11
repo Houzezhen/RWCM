@@ -1,0 +1,17 @@
+{
+  "baseline": "/home/user/code_1/WCM/outputs/eval_reg4_early_pair/5cut/baseline_s42/episode_curves/episode_metrics.json",
+  "candidate": "/home/user/code_1/WCM/outputs/eval_reg4_early_pair/5cut/early_s42/episode_curves/episode_metrics.json",
+  "episodes": 145,
+  "endpoints": 27727,
+  "baseline_mse": 0.036747799752724776,
+  "candidate_mse": 0.03711082440593879,
+  "mse_difference_candidate_minus_baseline": 0.0003630246532140141,
+  "relative_mse_change": 0.00987881330737622,
+  "paired_episode_bootstrap_ci95": [
+    -0.0016345888635899836,
+    0.002387362883284449
+  ],
+  "probability_candidate_lower_mse": 0.36475,
+  "bootstrap_samples": 20000,
+  "seed": 3072
+}
