@@ -1,0 +1,32 @@
+{
+  "baseline": "/home/user/code_1/WCM/outputs/eval_rank_pair/5cut/baseline_s3072/episode_curves/episode_curves.csv",
+  "candidate": "/home/user/code_1/WCM/outputs/eval_rank_pair/5cut/rank_s3072/episode_curves/episode_curves.csv",
+  "episodes": 145,
+  "endpoints": 27727,
+  "baseline_mse": 0.040607032898409744,
+  "candidate_mse": 0.03833491965938682,
+  "mse_difference_candidate_minus_baseline": -0.0022721132390229257,
+  "relative_mse_change": -0.055953687744368694,
+  "mse_paired_episode_bootstrap_ci95": [
+    -0.004760289826832243,
+    6.722365171930406e-05
+  ],
+  "paired_episode_bootstrap_ci95": [
+    -0.004760289826832243,
+    6.722365171930406e-05
+  ],
+  "probability_candidate_lower_mse": 0.9712,
+  "baseline_pearson": 0.3348590682373394,
+  "candidate_pearson": 0.41014885764807346,
+  "pearson_difference_candidate_minus_baseline": 0.07528978941073405,
+  "pearson_paired_episode_bootstrap_ci95": [
+    0.040593032301146505,
+    0.11233058341628933
+  ],
+  "probability_candidate_higher_pearson": 1.0,
+  "baseline_mean_bias": -0.005209836004695636,
+  "candidate_mean_bias": -0.020761576175923342,
+  "bootstrap_samples": 20000,
+  "bootstrap_seed": 3072,
+  "seed": 3072
+}
