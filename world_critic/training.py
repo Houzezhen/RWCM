@@ -402,6 +402,7 @@ def evaluate_loader(
                     instruction_input_ids=batch["instruction_input_ids"],
                     instruction_attention_mask=batch["instruction_attention_mask"],
                     valid_mask=batch["valid_mask"],
+                    state_vectors=batch.get("state_vectors"),
                 )
             return_target = canonicalize_return_target(batch["return_targets"])
             valid = output.valid_mask.bool()

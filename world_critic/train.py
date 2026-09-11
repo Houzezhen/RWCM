@@ -196,6 +196,24 @@ def run() -> None:
                     raise ValueError(
                         f"Configured state_dim={config.model.state_dim}, dataset has {inferred_state_dim}."
                     )
+            if config.model.use_proprioception:
+                if config.data.state_key is None:
+                    raise ValueError("use_proprioception=true requires data.state_key.")
+                inferred_state_dim = infer_feature_dim(base_dataset, config.data.state_key)
+                history_factor = (
+                    len(config.data.history_offsets)
+                    if config.data.history_offsets is not None
+                    else config.data.history_size
+                )
+                inferred_proprioception_dim = inferred_state_dim * history_factor
+                if config.model.proprioception_dim is None:
+                    config.model.proprioception_dim = inferred_proprioception_dim
+                elif config.model.proprioception_dim != inferred_proprioception_dim:
+                    raise ValueError(
+                        "Configured proprioception_dim does not match dataset/history: "
+                        f"configured={config.model.proprioception_dim}, "
+                        f"inferred={inferred_proprioception_dim}."
+                    )
 
         collectively_validate(ctx, "Dataset/schema preparation", prepare_datasets_and_schema)
 
@@ -379,6 +397,7 @@ def run() -> None:
                             instruction_input_ids=batch["instruction_input_ids"],
                             instruction_attention_mask=batch["instruction_attention_mask"],
                             valid_mask=batch["valid_mask"],
+                            state_vectors=batch.get("state_vectors"),
                         )
                         loss, loss_parts = compute_losses(
                             output,

@@ -172,6 +172,24 @@ def load_training_checkpoint(
                 saved["model"]["allow_noncausal_register_ablation"] = current["model"][
                     "allow_noncausal_register_ablation"
                 ]
+            model_defaults = {
+                "use_proprioception": False,
+                "proprioception_dim": None,
+            }
+            if any(key not in saved["model"] for key in model_defaults):
+                saved = dict(saved)
+                saved["model"] = dict(saved["model"])
+                for key, default in model_defaults.items():
+                    saved["model"].setdefault(key, default)
+            data_defaults = {
+                "history_offsets": None,
+                "history_mosaic": False,
+            }
+            if any(key not in saved.get("data", {}) for key in data_defaults):
+                saved = dict(saved)
+                saved["data"] = dict(saved.get("data", {}))
+                for key, default in data_defaults.items():
+                    saved["data"].setdefault(key, default)
             saved_loss = saved.get("loss", {})
             ranking_defaults = (
                 "ranking_weight",
@@ -196,6 +214,8 @@ def load_training_checkpoint(
                 ("data", "state_key"),
                 ("data", "return_key"),
                 ("data", "history_size"),
+                ("data", "history_offsets"),
+                ("data", "history_mosaic"),
                 ("data", "prediction_horizon"),
                 ("data", "val_fraction"),
                 ("data", "split_seed"),

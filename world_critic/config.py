@@ -21,6 +21,11 @@ class DataConfig:
     state_key: str | None = "observation.state"
     return_key: str = "return"
     history_size: int = 3
+    # Optional sparse observation history for endpoint scoring.  When set,
+    # offsets are ordered [0, older, ...] in frame-index units and the regular
+    # contiguous history window is reduced to one current endpoint.
+    history_offsets: list[int] | None = None
+    history_mosaic: bool = False
     prediction_horizon: int = 1
     val_fraction: float = 0.1
     split_seed: int = 3072
@@ -79,6 +84,11 @@ class ModelConfig:
     dynamics_depth: int = 3
     action_hidden_dim: int = 384
     predict_state_vector: bool = False
+    # Optional proprioception input fused into the value context.  The input
+    # dimension is inferred from the dataset when omitted (28 for four 7D
+    # sparse states).
+    use_proprioception: bool = False
+    proprioception_dim: int | None = None
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
     # 通过交叉注意力从历史帧 token 中吸收时序不变信息再注回各时间步。
     # 与 vision.num_register_tokens（空间 register，ViT 内部）相互独立，可分别消融。
@@ -298,6 +308,24 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("Training config requires data settings.")
     if config.data.history_size < 1:
         raise ValueError("data.history_size must be positive.")
+    if config.data.history_offsets is not None:
+        offsets = config.data.history_offsets
+        if not offsets or offsets[0] != 0:
+            raise ValueError("data.history_offsets must be non-empty and start with 0.")
+        if any(offset < 0 for offset in offsets):
+            raise ValueError("data.history_offsets cannot contain negative offsets.")
+        if offsets != sorted(set(offsets)):
+            raise ValueError("data.history_offsets must be sorted and contain no duplicates.")
+        if config.data.history_size != 1:
+            raise ValueError("data.history_size must be 1 when data.history_offsets is configured.")
+        if config.data.history_mosaic and len(offsets) != 4:
+            raise ValueError("data.history_mosaic requires exactly four history_offsets.")
+        if not config.data.history_mosaic:
+            raise ValueError(
+                "data.history_offsets currently requires data.history_mosaic=true."
+            )
+    elif config.data.history_mosaic:
+        raise ValueError("data.history_mosaic requires data.history_offsets.")
     if config.epochs < 1:
         raise ValueError("epochs must be positive.")
     if config.num_workers < 0:
@@ -316,6 +344,10 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("data.image_keys cannot contain empty feature names.")
     if config.model.max_history < 1:
         raise ValueError("model.max_history must be positive.")
+    if config.model.use_proprioception and config.data.state_key is None:
+        raise ValueError("use_proprioception=true requires data.state_key.")
+    if config.model.proprioception_dim is not None and config.model.proprioception_dim < 1:
+        raise ValueError("model.proprioception_dim must be positive when set.")
     if config.data.history_size > config.model.max_history:
         raise ValueError("data.history_size cannot exceed model.max_history.")
     if config.model.latent_dim < 1:

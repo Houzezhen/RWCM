@@ -641,6 +641,18 @@ class WorldCriticModel(nn.Module):
         self.view_attention = nn.MultiheadAttention(
             config.latent_dim, config.trunk_heads, dropout=config.dropout, batch_first=True
         )
+        self.proprioception_encoder = None
+        if config.use_proprioception:
+            if config.proprioception_dim is None:
+                raise ValueError(
+                    "use_proprioception=true requires model.proprioception_dim to be inferred before model construction."
+                )
+            self.proprioception_encoder = MLP(
+                config.proprioception_dim,
+                config.latent_dim,
+                config.latent_dim,
+                config.dropout,
+            )
         self.language_fusion = StateLanguageFusion(config)
         self.temporal_registers = None
         self.block_register_fusion = None
@@ -691,6 +703,7 @@ class WorldCriticModel(nn.Module):
         instruction_input_ids: torch.Tensor,
         instruction_attention_mask: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
+        state_vectors: torch.Tensor | None = None,
     ) -> WorldCriticOutput:
         if images.ndim not in (5, 6):
             raise ValueError(f"Expected images [B,T,C,H,W] or [B,T,V,C,H,W], got {images.shape}")
@@ -729,6 +742,31 @@ class WorldCriticModel(nn.Module):
 
         view_latents = self.vision_encoder(images)
         state_latents = self.pool_views(view_latents)
+        if self.proprioception_encoder is not None:
+            if state_vectors is None:
+                raise ValueError("This model requires state_vectors for proprioception fusion.")
+            if state_vectors.ndim != 3:
+                raise ValueError(
+                    f"state_vectors must be [B,T,D], got {tuple(state_vectors.shape)}"
+                )
+            expected_shape = (images.size(0), state_latents.size(1) - 1)
+            if state_vectors.shape[:2] != expected_shape:
+                raise ValueError(
+                    "state_vectors must provide one vector per current timestep: "
+                    f"expected [B,{expected_shape[1]},D], got {tuple(state_vectors.shape)}"
+                )
+            if state_vectors.size(-1) != self.config.proprioception_dim:
+                raise ValueError(
+                    f"Expected proprioception dim {self.config.proprioception_dim}, "
+                    f"got {state_vectors.size(-1)}"
+                )
+            if state_vectors.device != state_latents.device:
+                raise ValueError(
+                    "state_vectors and images must be on the same device: "
+                    f"{state_vectors.device} != {state_latents.device}"
+                )
+            state_latents = state_latents.clone()
+            state_latents[:, :-1] = state_latents[:, :-1] + self.proprioception_encoder(state_vectors)
         text_tokens, text_mask = self.language_encoder(
             instruction_input_ids,
             instruction_attention_mask,
@@ -770,6 +808,11 @@ class WorldCriticModel(nn.Module):
         Returns:
             Latents [B,H+K,D] containing encoded history followed by K predictions.
         """
+        if self.proprioception_encoder is not None:
+            raise NotImplementedError(
+                "rollout_latent requires an explicit sparse-history state adapter; "
+                "use forward() with state_vectors for Sparse4 scoring."
+            )
         if observation_images.ndim == 5:
             observation_images = observation_images.unsqueeze(2)
         if observation_images.ndim != 6:

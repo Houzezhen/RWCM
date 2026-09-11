@@ -101,6 +101,39 @@ def _to_image_tensor(value: Any) -> torch.Tensor:
         return torch.from_numpy(array)
 
 
+def _image_to_hwc(value: Any) -> torch.Tensor:
+    """Return one raw image as HWC without resizing or normalization."""
+
+    image = _to_image_tensor(value)
+    if image.ndim != 3:
+        raise ValueError(f"Image feature must be rank-3, got shape {tuple(image.shape)}.")
+    channels_first = image.shape[0] in (1, 3, 4)
+    channels_last = image.shape[-1] in (1, 3, 4)
+    if channels_first == channels_last:
+        raise ValueError(
+            f"Cannot unambiguously infer CHW versus HWC image layout: {tuple(image.shape)}"
+        )
+    return image.permute(1, 2, 0) if channels_first else image
+
+
+def _make_temporal_mosaic(images: list[Any]) -> torch.Tensor:
+    """Tile [current, older1, older2, older3] into a 2x2 HWC image."""
+
+    if len(images) != 4:
+        raise ValueError(f"Temporal mosaic requires exactly four images, got {len(images)}.")
+    frames = [_image_to_hwc(image) for image in images]
+    height, width, channels = frames[0].shape
+    if any(frame.shape != (height, width, channels) for frame in frames[1:]):
+        raise ValueError("Temporal mosaic frames must have identical HWC shapes.")
+    return torch.cat(
+        [
+            torch.cat([frames[0], frames[1]], dim=1),
+            torch.cat([frames[2], frames[3]], dim=1),
+        ],
+        dim=0,
+    )
+
+
 def _as_scalar(value: Any, *, name: str) -> Any:
     """Read one scalar without silently truncating vector-valued HF/Torch cells."""
     array = _to_numpy(value)
@@ -302,6 +335,7 @@ class LeRobotWorldCriticDataset(Dataset):
             if episode_id in episode_ranges:
                 raise ValueError(f"episode_index={episode_id} is not contiguous in the LeRobot table.")
             episode_ranges[episode_id] = (int(start), int(end))
+        self.episode_ranges = episode_ranges
 
         available_episodes = set(episode_ranges)
         allowed = set(map(int, episode_ids)) if episode_ids is not None else available_episodes
@@ -403,10 +437,49 @@ class LeRobotWorldCriticDataset(Dataset):
             raise ValueError(
                 f"Window {int(rows[0])}:{int(rows[-1])} changes task instruction within an episode."
             )
-        images = [
-            [_to_image_tensor(sample[key]) for key in self.config.image_keys]
-            for sample in samples
-        ]
+        if self.config.history_offsets is not None:
+            row_start, _ = self.episode_ranges[expected_episode]
+            history_rows = [max(row_start, start - offset) for offset in self.config.history_offsets]
+            history_samples = [self.dataset[int(row)] for row in history_rows]
+            if self.config.history_mosaic:
+                current_images = [
+                    [
+                        _make_temporal_mosaic([sample[key] for sample in history_samples])
+                        for key in self.config.image_keys
+                    ]
+                ]
+            else:
+                raise ValueError(
+                    "history_offsets currently requires history_mosaic=true; "
+                    "use the mosaic adapter before enabling sparse non-mosaic inputs."
+                )
+            images = current_images + [
+                [_to_image_tensor(sample[key]) for key in self.config.image_keys]
+                for sample in samples[1:]
+            ]
+            if self.config.state_key is not None:
+                state_vectors = torch.cat(
+                    [
+                        torch.as_tensor(sample[self.config.state_key], dtype=torch.float32).reshape(-1)
+                        for sample in history_samples
+                    ]
+                ).reshape(1, -1)
+            else:
+                state_vectors = None
+        else:
+            images = [
+                [_to_image_tensor(sample[key]) for key in self.config.image_keys]
+                for sample in samples
+            ]
+            if self.config.state_key is not None:
+                state_vectors = torch.stack(
+                    [
+                        torch.as_tensor(sample[self.config.state_key], dtype=torch.float32).reshape(-1)
+                        for sample in current
+                    ]
+                )
+            else:
+                state_vectors = None
 
         actions = torch.stack(
             [torch.as_tensor(sample[self.config.action_key], dtype=torch.float32).reshape(-1) for sample in current]
@@ -455,6 +528,10 @@ class LeRobotWorldCriticDataset(Dataset):
         }
         if return_targets is not None:
             batch["return_targets"] = return_targets
+        if state_vectors is not None:
+            if not torch.isfinite(state_vectors).all():
+                raise ValueError(f"Window {int(rows[0])} contains non-finite state vectors.")
+            batch["state_vectors"] = state_vectors
         if self.config.state_key is not None:
             has_states = [self.config.state_key in sample for sample in samples[1:]]
             if any(has_states) and not all(has_states):
@@ -584,6 +661,11 @@ class WorldCriticCollator:
             raise ValueError("A batch mixes samples with and without next_state_vector targets.")
         if all(has_states):
             output["next_state_vector"] = torch.stack([sample["next_state_vector"] for sample in samples])
+        has_state_vectors = ["state_vectors" in sample for sample in samples]
+        if any(has_state_vectors) and not all(has_state_vectors):
+            raise ValueError("A batch mixes samples with and without state_vectors.")
+        if all(has_state_vectors):
+            output["state_vectors"] = torch.stack([sample["state_vectors"] for sample in samples])
         return output
 
 
