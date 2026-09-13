@@ -320,10 +320,6 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError("data.history_size must be 1 when data.history_offsets is configured.")
         if config.data.history_mosaic and len(offsets) != 4:
             raise ValueError("data.history_mosaic requires exactly four history_offsets.")
-        if not config.data.history_mosaic:
-            raise ValueError(
-                "data.history_offsets currently requires data.history_mosaic=true."
-            )
     elif config.data.history_mosaic:
         raise ValueError("data.history_mosaic requires data.history_offsets.")
     if config.epochs < 1:

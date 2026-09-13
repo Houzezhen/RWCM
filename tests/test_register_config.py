@@ -58,12 +58,13 @@ class RegisterConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "history_size must be 1"):
             validate_train_config(config)
 
-    def test_sparse_history_rejects_non_mosaic_mode(self):
+    def test_sparse_history_supports_state_only_mode(self):
         config = self.config()
         config.data.history_size = 1
         config.data.history_offsets = [0, 20, 40, 60]
-        with self.assertRaisesRegex(ValueError, "history_mosaic=true"):
-            validate_train_config(config)
+        config.model.use_proprioception = True
+        config.model.proprioception_dim = 28
+        validate_train_config(config)
 
 
 if __name__ == "__main__":

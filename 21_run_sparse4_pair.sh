@@ -18,17 +18,20 @@ mkdir -p outputs/batch_logs "$EVAL_ROOT/comparisons"
 echo "== 0/3 config and input smoke =="
 "$PYTHON" -m pytest tests/test_register_config.py tests/test_temporal_input.py -q
 
-echo "== 1/3 train Sparse4 candidates =="
+echo "== 1/3 train Sparse4 and input ablations =="
 for SEED in 3072 42; do
-  CFG="configs/wcm_sparse4_exp_s${SEED}.yaml"
-  OUT="$BASE/wcm_sparse4_exp_s${SEED}"
-  LOG="outputs/batch_logs/wcm_sparse4_exp_s${SEED}.log"
-  if [[ -f "$OUT/deploy.pt" && -f "$OUT/metrics.jsonl" && $(wc -l < "$OUT/metrics.jsonl") -ge 10 ]]; then
-    echo "[skip] completed: $OUT"
-    continue
-  fi
-  echo "[train] $CFG"
-  "$PYTHON" -u -m world_critic.train --config "$CFG" 2>&1 | tee "$LOG"
+  for VARIANT in sparse4 image state; do
+    if [[ "$VARIANT" == sparse4 ]]; then PREFIX=sparse4; else PREFIX="sparse4_${VARIANT}"; fi
+    CFG="configs/wcm_${PREFIX}_exp_s${SEED}.yaml"
+    OUT="$BASE/wcm_${PREFIX}_exp_s${SEED}"
+    LOG="outputs/batch_logs/wcm_${PREFIX}_exp_s${SEED}.log"
+    if [[ -f "$OUT/deploy.pt" && -f "$OUT/metrics.jsonl" && $(wc -l < "$OUT/metrics.jsonl") -ge 10 ]]; then
+      echo "[skip] completed: $OUT"
+      continue
+    fi
+    echo "[train] $CFG"
+    "$PYTHON" -u -m world_critic.train --config "$CFG" 2>&1 | tee "$LOG"
+  done
 done
 
 run_eval() {
@@ -66,17 +69,21 @@ for DATASET_NAME in 5cut ood; do
   for SEED in 3072 42; do
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "baseline_s$SEED" "$BASE/wcm_baseline_exp_s$SEED/deploy.pt"
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "sparse4_s$SEED" "$BASE/wcm_sparse4_exp_s$SEED/deploy.pt"
+    run_eval "$DATASET_NAME" "$DATASET_ROOT" "image_s$SEED" "$BASE/wcm_sparse4_image_exp_s$SEED/deploy.pt"
+    run_eval "$DATASET_NAME" "$DATASET_ROOT" "state_s$SEED" "$BASE/wcm_sparse4_state_exp_s$SEED/deploy.pt"
   done
 done
 
 echo "== 3/3 paired endpoint bootstrap =="
 for DATASET_NAME in 5cut ood; do
   for SEED in 3072 42; do
-    "$PYTHON" -m scripts.compare_experiments \
-      "$EVAL_ROOT/$DATASET_NAME/baseline_s$SEED" \
-      "$EVAL_ROOT/$DATASET_NAME/sparse4_s$SEED" \
-      --align common \
-      --output "$EVAL_ROOT/comparisons/${DATASET_NAME}_s${SEED}.json"
+    for VARIANT in sparse4 image state; do
+      "$PYTHON" -m scripts.compare_experiments \
+        "$EVAL_ROOT/$DATASET_NAME/baseline_s$SEED" \
+        "$EVAL_ROOT/$DATASET_NAME/${VARIANT}_s$SEED" \
+        --align common \
+        --output "$EVAL_ROOT/comparisons/${DATASET_NAME}_${VARIANT}_s${SEED}.json"
+    done
   done
 done
 

@@ -449,10 +449,9 @@ class LeRobotWorldCriticDataset(Dataset):
                     ]
                 ]
             else:
-                raise ValueError(
-                    "history_offsets currently requires history_mosaic=true; "
-                    "use the mosaic adapter before enabling sparse non-mosaic inputs."
-                )
+                current_images = [
+                    [_to_image_tensor(history_samples[0][key]) for key in self.config.image_keys]
+                ]
             images = current_images + [
                 [_to_image_tensor(sample[key]) for key in self.config.image_keys]
                 for sample in samples[1:]
