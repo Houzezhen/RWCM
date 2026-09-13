@@ -1,0 +1,35 @@
+{
+  "baseline": "/home/user/code_1/WCM/outputs/eval_sparse4_pair/5cut/baseline_s42/episode_curves/episode_curves.csv",
+  "candidate": "/home/user/code_1/WCM/outputs/eval_sparse4_pair/5cut/sparse4_s42/episode_curves/episode_curves.csv",
+  "episodes": 145,
+  "endpoints": 27727,
+  "alignment": "common",
+  "dropped_baseline_endpoints": 0,
+  "dropped_candidate_endpoints": 290,
+  "baseline_mse": 0.03674779975272477,
+  "candidate_mse": 0.012749988114638311,
+  "mse_difference_candidate_minus_baseline": -0.02399781163808646,
+  "relative_mse_change": -0.6530407752183061,
+  "mse_paired_episode_bootstrap_ci95": [
+    -0.030641113400456794,
+    -0.018769134011982543
+  ],
+  "paired_episode_bootstrap_ci95": [
+    -0.030641113400456794,
+    -0.018769134011982543
+  ],
+  "probability_candidate_lower_mse": 1.0,
+  "baseline_pearson": 0.40667000723935287,
+  "candidate_pearson": 0.8293839740778893,
+  "pearson_difference_candidate_minus_baseline": 0.42271396683853646,
+  "pearson_paired_episode_bootstrap_ci95": [
+    0.3547150914763889,
+    0.5006766617221974
+  ],
+  "probability_candidate_higher_pearson": 1.0,
+  "baseline_mean_bias": 0.005762982969514403,
+  "candidate_mean_bias": -0.007692473857468856,
+  "bootstrap_samples": 20000,
+  "bootstrap_seed": 3072,
+  "seed": 3072
+}
