@@ -16,6 +16,12 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("candidate", help="Candidate eval directory or episode_metrics.json")
     result.add_argument("--bootstrap-samples", type=int, default=20_000)
     result.add_argument("--seed", type=int, default=3072)
+    result.add_argument(
+        "--align",
+        choices=["exact", "common"],
+        default="exact",
+        help="Endpoint alignment policy; common is required when history lengths differ.",
+    )
     result.add_argument("--output")
     return result
 
@@ -97,13 +103,22 @@ def run() -> None:
     candidate_path = curve_path(args.candidate)
     baseline = load(baseline_path)
     candidate = load(candidate_path)
-    if baseline.keys() != candidate.keys():
-        missing_candidate = sorted(baseline.keys() - candidate.keys())
-        missing_baseline = sorted(candidate.keys() - baseline.keys())
-        raise ValueError(
-            "Evaluation endpoint sets differ: "
-            f"missing_candidate={missing_candidate[:10]}, missing_baseline={missing_baseline[:10]}"
-        )
+    baseline_keys = set(baseline)
+    candidate_keys = set(candidate)
+    dropped_baseline = sorted(baseline_keys - candidate_keys)
+    dropped_candidate = sorted(candidate_keys - baseline_keys)
+    if dropped_baseline or dropped_candidate:
+        if args.align == "exact":
+            raise ValueError(
+                "Evaluation endpoint sets differ: "
+                f"missing_candidate={dropped_baseline[:10]}, "
+                f"missing_baseline={dropped_candidate[:10]}"
+            )
+        common_keys = baseline_keys & candidate_keys
+        if not common_keys:
+            raise ValueError("Evaluation endpoint sets have no common endpoints.")
+        baseline = {key: baseline[key] for key in common_keys}
+        candidate = {key: candidate[key] for key in common_keys}
 
     mismatched_targets = [
         key
@@ -148,6 +163,9 @@ def run() -> None:
         "candidate": str(candidate_path.resolve()),
         "episodes": len(episode_ids),
         "endpoints": int(baseline_stats[:, 0].sum()),
+        "alignment": args.align,
+        "dropped_baseline_endpoints": len(dropped_baseline),
+        "dropped_candidate_endpoints": len(dropped_candidate),
         "baseline_mse": float(base_mse),
         "candidate_mse": float(candidate_mse),
         "mse_difference_candidate_minus_baseline": float(candidate_mse - base_mse),

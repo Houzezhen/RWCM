@@ -75,6 +75,7 @@ for DATASET_NAME in 5cut ood; do
     "$PYTHON" -m scripts.compare_experiments \
       "$EVAL_ROOT/$DATASET_NAME/baseline_s$SEED" \
       "$EVAL_ROOT/$DATASET_NAME/sparse4_s$SEED" \
+      --align common \
       --output "$EVAL_ROOT/comparisons/${DATASET_NAME}_s${SEED}.json"
   done
 done
