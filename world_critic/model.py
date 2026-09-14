@@ -144,23 +144,7 @@ class VisionEncoder(nn.Module):
             )
         return layer_norm(tokens)
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            images: [B,T,V,C,H,W], normalized for the configured vision backbone.
-        Returns:
-            Per-camera latents [B,T,V,D].
-        """
-        if images.ndim == 5:
-            images = images.unsqueeze(2)
-        if images.ndim != 6:
-            raise ValueError(f"Expected images [B,T,V,C,H,W], got {images.shape}")
-        batch, time, views, channels, height, width = images.shape
-        if views > self.camera_embedding.size(2):
-            raise ValueError(
-                f"Model has {self.camera_embedding.size(2)} camera slots but received {views} views."
-            )
-        flat = images.reshape(batch * time * views, channels, height, width)
+    def _encode_flat_tokens(self, flat: torch.Tensor) -> torch.Tensor:
         parameters = inspect.signature(self.backbone.forward).parameters
         kwargs = {"pixel_values": flat}
         if "interpolate_pos_encoding" in parameters:
@@ -202,9 +186,101 @@ class VisionEncoder(nn.Module):
                 [hidden, self.register_tokens.expand(hidden.size(0), -1, -1)], dim=1
             )
             hidden = self._run_encoder(tokens)
-        frame_latent = self.projection(hidden[:, 0])
-        frame_latent = frame_latent.view(batch, time, views, -1)
+        return hidden
+
+    def encode_tokens(self, images: torch.Tensor) -> torch.Tensor:
+        """Return projected CLS+patch tokens as [B,T,V,N,D]."""
+
+        if images.ndim == 5:
+            images = images.unsqueeze(2)
+        if images.ndim != 6:
+            raise ValueError(f"Expected images [B,T,V,C,H,W], got {images.shape}")
+        batch, time, views, channels, height, width = images.shape
+        if views > self.camera_embedding.size(2):
+            raise ValueError(
+                f"Model has {self.camera_embedding.size(2)} camera slots but received {views} views."
+            )
+        flat = images.reshape(batch * time * views, channels, height, width)
+        hidden = self._encode_flat_tokens(flat)
+        tokens = self.projection(hidden)
+        return tokens.view(batch, time, views, tokens.size(1), tokens.size(2))
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            images: [B,T,V,C,H,W], normalized for the configured vision backbone.
+        Returns:
+            Per-camera latents [B,T,V,D].
+        """
+        tokens = self.encode_tokens(images)
+        batch, time, views = tokens.shape[:3]
+        frame_latent = tokens[:, :, :, 0]
         return frame_latent + self.camera_embedding[:, :, :views]
+
+
+class CrossFrameQueryLayer(nn.Module):
+    """Update one current-frame query from all sparse frame patch tokens."""
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        self.query_norm = nn.LayerNorm(config.latent_dim)
+        self.context_norm = nn.LayerNorm(config.latent_dim)
+        self.attention = nn.MultiheadAttention(
+            config.latent_dim,
+            config.trunk_heads,
+            dropout=config.dropout,
+            batch_first=True,
+        )
+        self.ffn_norm = nn.LayerNorm(config.latent_dim)
+        self.ffn = MLP(
+            config.latent_dim,
+            int(config.latent_dim * config.trunk_mlp_ratio),
+            config.latent_dim,
+            config.dropout,
+        )
+
+    def forward(self, query: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+        attended, _ = self.attention(
+            self.query_norm(query),
+            self.context_norm(context),
+            self.context_norm(context),
+            need_weights=False,
+        )
+        query = query + attended
+        return query + self.ffn(self.ffn_norm(query))
+
+
+class SparseCrossFrameEncoder(nn.Module):
+    """VGGT-inspired query aggregation over full sparse-frame patch grids."""
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        self.frame_count = config.cross_frame_count
+        self.time_embedding = nn.Parameter(
+            torch.zeros(1, config.cross_frame_count, 1, config.latent_dim)
+        )
+        self.layers = nn.ModuleList(
+            CrossFrameQueryLayer(config) for _ in range(config.cross_frame_layers)
+        )
+        self.output_norm = nn.LayerNorm(config.latent_dim)
+        nn.init.normal_(self.time_embedding, std=0.02)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        # tokens: [B,K,V,N,D], ordered current to oldest.
+        if tokens.ndim != 5:
+            raise ValueError(f"Cross-frame tokens must be [B,K,V,N,D], got {tokens.shape}")
+        batch, frames, views, token_count, dim = tokens.shape
+        if frames != self.frame_count:
+            raise ValueError(f"Expected {self.frame_count} sparse frames, got {frames}.")
+        by_view = tokens.permute(0, 2, 1, 3, 4).reshape(
+            batch * views, frames, token_count, dim
+        )
+        context = by_view + self.time_embedding
+        context = context.reshape(batch * views, frames * token_count, dim)
+        query = by_view[:, 0, :1] + self.time_embedding[:, 0]
+        for layer in self.layers:
+            query = layer(query, context)
+        return self.output_norm(query[:, 0]).view(batch, views, dim)
 
 
 class LanguageEncoder(nn.Module):
@@ -674,6 +750,11 @@ class WorldCriticModel(nn.Module):
                 config.dropout,
             )
         nn.init.normal_(self.view_pool_query, std=0.02)
+        # Constructed last so enabling the experimental path does not perturb
+        # initialization of any parameter shared with the S4-Image baseline.
+        self.cross_frame_encoder = (
+            SparseCrossFrameEncoder(config) if config.use_cross_frame_tokens else None
+        )
 
     def pool_views(self, view_latents: torch.Tensor) -> torch.Tensor:
         batch, time, views, dim = view_latents.shape
@@ -704,6 +785,7 @@ class WorldCriticModel(nn.Module):
         instruction_attention_mask: torch.Tensor,
         valid_mask: torch.Tensor | None = None,
         state_vectors: torch.Tensor | None = None,
+        history_images: torch.Tensor | None = None,
     ) -> WorldCriticOutput:
         if images.ndim not in (5, 6):
             raise ValueError(f"Expected images [B,T,C,H,W] or [B,T,V,C,H,W], got {images.shape}")
@@ -740,8 +822,29 @@ class WorldCriticModel(nn.Module):
                 f"valid_mask and actions must be on the same device: {valid_mask.device} != {actions.device}."
             )
 
-        view_latents = self.vision_encoder(images)
-        state_latents = self.pool_views(view_latents)
+        if self.cross_frame_encoder is not None:
+            if history_images is None:
+                raise ValueError("This model requires history_images for cross-frame fusion.")
+            if history_images.ndim != 6:
+                raise ValueError(
+                    f"history_images must be [B,K,V,C,H,W], got {history_images.shape}"
+                )
+            if history_images.size(0) != images.size(0):
+                raise ValueError("history_images and images must have the same batch size.")
+            if history_images.device != images.device:
+                raise ValueError("history_images and images must be on the same device.")
+            history_tokens = self.vision_encoder.encode_tokens(history_images)
+            current_views = self.cross_frame_encoder(history_tokens)
+            views = current_views.size(1)
+            current_views = current_views + self.vision_encoder.camera_embedding[:, 0, :views]
+            current_state = self.pool_views(current_views.unsqueeze(1))
+            next_state = self.pool_views(self.vision_encoder(images[:, 1:]))
+            state_latents = torch.cat([current_state, next_state], dim=1)
+        else:
+            if history_images is not None:
+                raise ValueError("history_images were provided to a model without cross-frame fusion.")
+            view_latents = self.vision_encoder(images)
+            state_latents = self.pool_views(view_latents)
         if self.proprioception_encoder is not None:
             if state_vectors is None:
                 raise ValueError("This model requires state_vectors for proprioception fusion.")
@@ -812,6 +915,10 @@ class WorldCriticModel(nn.Module):
             raise NotImplementedError(
                 "rollout_latent requires an explicit sparse-history state adapter; "
                 "use forward() with state_vectors for Sparse4 scoring."
+            )
+        if self.cross_frame_encoder is not None:
+            raise NotImplementedError(
+                "rollout_latent requires explicit sparse history images for cross-frame fusion."
             )
         if observation_images.ndim == 5:
             observation_images = observation_images.unsqueeze(2)

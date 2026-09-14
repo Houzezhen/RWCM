@@ -398,6 +398,7 @@ def run() -> None:
                             instruction_attention_mask=batch["instruction_attention_mask"],
                             valid_mask=batch["valid_mask"],
                             state_vectors=batch.get("state_vectors"),
+                            history_images=batch.get("history_images"),
                         )
                         loss, loss_parts = compute_losses(
                             output,

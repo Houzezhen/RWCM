@@ -66,6 +66,17 @@ class RegisterConfigValidationTest(unittest.TestCase):
         config.model.proprioception_dim = 28
         validate_train_config(config)
 
+    def test_cross_frame_tokens_require_explicit_sparse_frames(self):
+        config = self.config()
+        config.data.history_size = 1
+        config.data.history_offsets = [0, 20, 40, 60]
+        config.model.use_cross_frame_tokens = True
+        with self.assertRaisesRegex(ValueError, "history_frames=true"):
+            validate_train_config(config)
+
+        config.data.history_frames = True
+        validate_train_config(config)
+
 
 if __name__ == "__main__":
     unittest.main()

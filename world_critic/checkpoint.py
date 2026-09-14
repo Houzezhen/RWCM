@@ -175,6 +175,9 @@ def load_training_checkpoint(
             model_defaults = {
                 "use_proprioception": False,
                 "proprioception_dim": None,
+                "use_cross_frame_tokens": False,
+                "cross_frame_count": 4,
+                "cross_frame_layers": 2,
             }
             if any(key not in saved["model"] for key in model_defaults):
                 saved = dict(saved)
@@ -184,6 +187,7 @@ def load_training_checkpoint(
             data_defaults = {
                 "history_offsets": None,
                 "history_mosaic": False,
+                "history_frames": False,
             }
             if any(key not in saved.get("data", {}) for key in data_defaults):
                 saved = dict(saved)
@@ -216,6 +220,7 @@ def load_training_checkpoint(
                 ("data", "history_size"),
                 ("data", "history_offsets"),
                 ("data", "history_mosaic"),
+                ("data", "history_frames"),
                 ("data", "prediction_horizon"),
                 ("data", "val_fraction"),
                 ("data", "split_seed"),

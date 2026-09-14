@@ -26,6 +26,7 @@ class DataConfig:
     # contiguous history window is reduced to one current endpoint.
     history_offsets: list[int] | None = None
     history_mosaic: bool = False
+    history_frames: bool = False
     prediction_horizon: int = 1
     val_fraction: float = 0.1
     split_seed: int = 3072
@@ -89,6 +90,12 @@ class ModelConfig:
     # sparse states).
     use_proprioception: bool = False
     proprioception_dim: int | None = None
+    # VGGT-inspired sparse cross-frame reasoning: retain full patch grids for
+    # the configured history offsets and let a current-frame query attend to
+    # all historical patch tokens before WCM context/value prediction.
+    use_cross_frame_tokens: bool = False
+    cross_frame_count: int = 4
+    cross_frame_layers: int = 2
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
     # 通过交叉注意力从历史帧 token 中吸收时序不变信息再注回各时间步。
     # 与 vision.num_register_tokens（空间 register，ViT 内部）相互独立，可分别消融。
@@ -320,8 +327,12 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError("data.history_size must be 1 when data.history_offsets is configured.")
         if config.data.history_mosaic and len(offsets) != 4:
             raise ValueError("data.history_mosaic requires exactly four history_offsets.")
+        if config.data.history_mosaic and config.data.history_frames:
+            raise ValueError("history_mosaic and history_frames are mutually exclusive.")
     elif config.data.history_mosaic:
         raise ValueError("data.history_mosaic requires data.history_offsets.")
+    elif config.data.history_frames:
+        raise ValueError("data.history_frames requires data.history_offsets.")
     if config.epochs < 1:
         raise ValueError("epochs must be positive.")
     if config.num_workers < 0:
@@ -344,6 +355,15 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("use_proprioception=true requires data.state_key.")
     if config.model.proprioception_dim is not None and config.model.proprioception_dim < 1:
         raise ValueError("model.proprioception_dim must be positive when set.")
+    if config.model.use_cross_frame_tokens:
+        if not config.data.history_frames:
+            raise ValueError("use_cross_frame_tokens=true requires data.history_frames=true.")
+        if config.data.history_offsets is None:
+            raise ValueError("use_cross_frame_tokens=true requires data.history_offsets.")
+        if config.model.cross_frame_count != len(config.data.history_offsets):
+            raise ValueError("cross_frame_count must match the number of history_offsets.")
+    if config.model.cross_frame_count < 1 or config.model.cross_frame_layers < 1:
+        raise ValueError("cross_frame_count and cross_frame_layers must be positive.")
     if config.data.history_size > config.model.max_history:
         raise ValueError("data.history_size cannot exceed model.max_history.")
     if config.model.latent_dim < 1:

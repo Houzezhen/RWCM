@@ -452,6 +452,14 @@ class LeRobotWorldCriticDataset(Dataset):
                 current_images = [
                     [_to_image_tensor(history_samples[0][key]) for key in self.config.image_keys]
                 ]
+            history_images = (
+                [
+                    [_to_image_tensor(sample[key]) for key in self.config.image_keys]
+                    for sample in history_samples
+                ]
+                if self.config.history_frames
+                else None
+            )
             images = current_images + [
                 [_to_image_tensor(sample[key]) for key in self.config.image_keys]
                 for sample in samples[1:]
@@ -479,6 +487,7 @@ class LeRobotWorldCriticDataset(Dataset):
                 )
             else:
                 state_vectors = None
+            history_images = None
 
         actions = torch.stack(
             [torch.as_tensor(sample[self.config.action_key], dtype=torch.float32).reshape(-1) for sample in current]
@@ -531,6 +540,8 @@ class LeRobotWorldCriticDataset(Dataset):
             if not torch.isfinite(state_vectors).all():
                 raise ValueError(f"Window {int(rows[0])} contains non-finite state vectors.")
             batch["state_vectors"] = state_vectors
+        if history_images is not None:
+            batch["history_images"] = history_images
         if self.config.state_key is not None:
             has_states = [self.config.state_key in sample for sample in samples[1:]]
             if any(has_states) and not all(has_states):
@@ -665,6 +676,58 @@ class WorldCriticCollator:
             raise ValueError("A batch mixes samples with and without state_vectors.")
         if all(has_state_vectors):
             output["state_vectors"] = torch.stack([sample["state_vectors"] for sample in samples])
+        has_history_images = ["history_images" in sample for sample in samples]
+        if any(has_history_images) and not all(has_history_images):
+            raise ValueError("A batch mixes samples with and without history_images.")
+        if all(has_history_images):
+            history_time = len(samples[0]["history_images"])
+            if history_time < 1 or any(
+                len(sample["history_images"]) != history_time
+                or any(len(step_views) != views for step_views in sample["history_images"])
+                for sample in samples
+            ):
+                raise ValueError("All sparse histories must have the same timestep and camera counts.")
+            history_flat = [
+                image
+                for sample in samples
+                for step_views in sample["history_images"]
+                for image in step_views
+            ]
+            history_list = []
+            history_do_rescale = None
+            for image in history_flat:
+                image = _image_to_hwc(image)
+                array = image.cpu().numpy()
+                if not np.isfinite(array).all():
+                    raise ValueError("Sparse history images must contain only finite values.")
+                if np.issubdtype(array.dtype, np.floating):
+                    minimum, maximum = float(array.min()), float(array.max())
+                    if minimum < -1e-6 or maximum > 255.0 + 1e-6:
+                        raise ValueError(f"Sparse image range [{minimum}, {maximum}] is invalid.")
+                    current_rescale = maximum > 1.0 + 1e-6
+                elif np.issubdtype(array.dtype, np.integer):
+                    minimum, maximum = int(array.min()), int(array.max())
+                    if minimum < 0 or maximum > 255:
+                        raise ValueError(f"Sparse image range [{minimum}, {maximum}] is invalid.")
+                    current_rescale = True
+                else:
+                    raise TypeError(f"Unsupported sparse image dtype {array.dtype}.")
+                history_list.append(array)
+                if history_do_rescale is None:
+                    history_do_rescale = current_rescale
+                elif history_do_rescale != current_rescale:
+                    raise ValueError("Sparse history mixes incompatible image ranges.")
+            history_kwargs = dict(
+                images=history_list,
+                return_tensors="pt",
+                size={"height": self.image_size, "width": self.image_size},
+            )
+            if history_do_rescale is False:
+                history_kwargs["do_rescale"] = False
+            history_processed = self.image_processor(**history_kwargs)["pixel_values"]
+            output["history_images"] = history_processed.view(
+                batch, history_time, views, *history_processed.shape[1:]
+            )
         return output
 
 

@@ -25,6 +25,10 @@ KEEP_FULL=(
   wcm_baseline_exp_s42
   wcm_sparse4_image_exp_s3072
   wcm_sparse4_image_exp_s42
+  wcm_sparse4_image_b4_exp_s3072
+  wcm_sparse4_image_b4_exp_s42
+  wcm_sparse_vggt_exp_s3072
+  wcm_sparse_vggt_exp_s42
 )
 
 # Completed ablations: deploy.pt is sufficient for evaluation/reproduction of

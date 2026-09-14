@@ -219,3 +219,20 @@ bash 22_cleanup_cross_frame_weights.sh --apply
 ```
 
 清理策略：baseline 与 S4-Image 保留完整训练状态；Full Sparse4 与 S4-State 只保留 `deploy.pt`；RankNet 和已否决 register 线整目录删除。仓库内 comparison JSON、评估 summary、训练日志和本文档不删除。
+
+## 9. Sparse-VGGT 实验
+
+实现采用四个完整分辨率稀疏帧的共享 ViT patch tokens。每个 camera 内，当前帧 CLS query 通过两层 cross-attention 读取四帧 `CLS+patch` context；加入四个时间槽 embedding，输出再进入原 WCM view pooling、language fusion、context trunk 和 value head。第一版不融合 proprioception。
+
+为避免 batch size 混淆，主实验同时重训 batch 4 的 S4-Image 对照。两组共享相同 seed、数据 split、epoch、优化器和 loss；跨帧模块在所有公共模块之后初始化，因此不会改变公共参数的初始随机数流。
+
+虚拟机运行：
+
+```bash
+cd ~/code_1/WCM
+git switch cross-frame-wcm
+git pull --ff-only
+CUDA_VISIBLE_DEVICES=0 bash 23_run_sparse_vggt_pair.sh
+```
+
+脚本首先执行 batch 4 的真实 CUDA forward/backward/AdamW smoke 并报告峰值显存；门禁通过后训练 Image-B4 和 Sparse-VGGT 两 seed，最后分别生成相对 Image-B4（主比较）和原始 WCM（次比较）的 episode-paired JSON。
