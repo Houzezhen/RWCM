@@ -185,3 +185,37 @@ VGGT 结构只有在 Full Sparse4 及至少一个单模态消融通过 OOD 多 s
 ## 7. 当前结论
 
 Full Sparse4 及两个单模态消融都在两个 seed 上稳定改善，输入来源已经完成初步归因：稀疏视觉历史贡献最大，state 历史提供强辅助阶段信号，但现有融合方式不是最佳。下一阶段进入 VGGT-inspired patch-level 跨帧视觉融合，并以 S4-Image 而不是 Full Sparse4 作为主要强 baseline。
+
+## 8. 虚拟机运行与权重清理
+
+切换到当前实验分支并确认环境：
+
+```bash
+cd ~/code_1/WCM
+git fetch origin
+git switch cross-frame-wcm
+git pull --ff-only
+.venv/bin/python -m pytest tests/test_register_config.py tests/test_temporal_input.py -q
+```
+
+复现 Sparse4 及 Image/State 消融：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash 21_run_sparse4_pair.sh
+```
+
+脚本检测到完整的 `deploy.pt` 和 10 轮 `metrics.jsonl` 时会跳过已完成训练，因此可以安全重跑以补齐缺失评估。
+
+清理训练权重前先预览：
+
+```bash
+bash 22_cleanup_cross_frame_weights.sh
+```
+
+核对输出中的精确目录后执行：
+
+```bash
+bash 22_cleanup_cross_frame_weights.sh --apply
+```
+
+清理策略：baseline 与 S4-Image 保留完整训练状态；Full Sparse4 与 S4-State 只保留 `deploy.pt`；RankNet 和已否决 register 线整目录删除。仓库内 comparison JSON、评估 summary、训练日志和本文档不删除。
