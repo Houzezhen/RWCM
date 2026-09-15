@@ -466,3 +466,15 @@ SparseMemory 的强基线仍是相同 batch/seed 的 Image-B4，而不是原始 
 5. 若 s3072 第 5 轮预检已在 MSE/Pearson 两项显著劣于 Image-B4，可先训满 s3072 定版，再决定是否启动 s42。
 
 若该结构仍不能超过 Image-B4，应接受当前监督信号只足以稳定利用输入级 mosaic 的结论，停止继续增加时序模块复杂度，转向 return/risk/Q 监督和下游策略收益验证。
+
+### 11.8 从头训练入口
+
+`configs/wcm_sparse_memory_exp_s{3072,42}.yaml` 和 `25_run_sparse_memory_pair.sh` 是 warm-start 版本：它们带有 `init_from`，会从旧 Sparse-VGGT `deploy.pt` 加载共享权重。
+
+若要完全重新开始，使用以下 scratch 配置和脚本：
+
+- `configs/wcm_sparse_memory_scratch_s3072.yaml`
+- `configs/wcm_sparse_memory_scratch_s42.yaml`
+- `26_run_sparse_memory_scratch_pair.sh`
+
+scratch 配置没有 `init_from`，因此从预训练 ViT/CLIP 和随机初始化的 WCM/memory 模块开始；输出目录使用 `wcm_sparse_memory_scratch_s*`。脚本检测到同名输出目录会直接中止，防止把旧的 `metrics.jsonl` 或 checkpoint 混入新实验。
