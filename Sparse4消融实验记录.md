@@ -335,3 +335,20 @@ Frame-wise block 是原始 ViT block：每帧内部的 `CLS+patch` 做 self-atte
 3. Pearson 不系统性下降，且 mean bias 不明显恶化。
 
 若交替结构仍不超过 Image-B4，则冻结 S4-Image 作为跨帧视觉主线，不再在失败的 full patch-token 路径上叠加 register 或继续调 attention 超参。
+
+### 10.4 第 5 轮 OOD 中间预检（s3072）
+
+训练进行中，用第 5 轮 checkpoint（`epoch-0004.pt`，即 `save_every_epochs: 5` 的落盘点）提前做了一次 OOD 预检。评估在 GPU 0 上运行（`outputs/eval_temporal_probe/ood_ep5_s3072/`），与 `eval_sparse_vggt_pair/ood/image_b4_s3072` 做 episode 配对 bootstrap（125 集，22082 共同 endpoint，无丢弃）：
+
+| 指标 | Image-B4 | temporal 第 5 轮 | 差值 | 95% CI |
+|---|---:|---:|---:|---|
+| MSE | 0.045589 | 0.049184 | +7.9% | `[+0.00123, +0.00602]` 排除 0，更差 |
+| Pearson | 0.850513 | 0.806898 | -0.043616 | `[-0.05589, -0.03209]` 排除 0，更差 |
+| mean bias | -0.164962 | -0.148906 | 略好 | — |
+| centered MSE | 0.018376 | 0.027021 | 更差 | — |
+
+预检解读：
+
+1. temporal 模块相对 warm-start 起点在补回损失——第 5 轮 OOD Pearson 0.807 高于 VGGT 原始的 0.783——但仍显著落后 Image-B4 的 0.851，MSE 与 Pearson 两项 CI 均排除 0。
+2. 剩余 5 轮 lr 已衰减至很低，填平 Pearson 0.044 + MSE 8% 差距的可能性不大。本预检倾向否决方向。
+3. 处置：s3072 按原协议训满 10 轮，用 `deploy.pt` 做正式比较以与预检互相印证；若正式结果仍输给 Image-B4，则 s42 组不再训练，按 §10.3 门禁冻结该结构。此预检只用于提前决策，不作为最终判定依据。
