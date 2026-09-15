@@ -184,6 +184,13 @@ def load_training_checkpoint(
                 "temporal_transformer_heads": 4,
                 "temporal_transformer_dim": 192,
                 "temporal_transformer_mlp_ratio": 2.0,
+                "use_sparse_temporal_memory": False,
+                "sparse_memory_frame_count": 4,
+                "sparse_memory_tokens": 8,
+                "sparse_memory_global_layers": 6,
+                "sparse_memory_heads": 8,
+                "sparse_memory_mlp_ratio": 2.0,
+                "sparse_memory_layerscale_init": 1.0e-3,
             }
             if any(key not in saved["model"] for key in model_defaults):
                 saved = dict(saved)

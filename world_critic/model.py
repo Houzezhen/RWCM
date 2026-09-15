@@ -164,6 +164,164 @@ class CausalPatchTemporalAdapter(nn.Module):
         return chronological.flip(2)
 
 
+class _SparseMemoryGlobalBlock(nn.Module):
+    """Block-causal self-attention over a short persistent memory sequence."""
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        heads: int,
+        dropout: float,
+        mlp_ratio: float,
+        layerscale_init: float,
+    ) -> None:
+        super().__init__()
+        if hidden_dim % heads != 0:
+            raise ValueError(
+                f"Vision hidden dim {hidden_dim} must be divisible by memory heads {heads}."
+            )
+        self.attention_norm = nn.LayerNorm(hidden_dim)
+        self.attention = nn.MultiheadAttention(
+            hidden_dim,
+            heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.ffn_norm = nn.LayerNorm(hidden_dim)
+        self.ffn = MLP(
+            hidden_dim,
+            int(hidden_dim * mlp_ratio),
+            hidden_dim,
+            dropout,
+        )
+        self.layerscale = nn.Parameter(torch.full((), layerscale_init))
+
+    def forward(self, memory: torch.Tensor) -> torch.Tensor:
+        if memory.ndim != 5:
+            raise ValueError(f"Sparse memory must be [B,V,K,M,D], got {memory.shape}")
+        batch, views, frames, memory_count, hidden_dim = memory.shape
+        sequence = memory.reshape(batch * views, frames * memory_count, hidden_dim)
+        frame_ids = torch.arange(frames, device=memory.device).repeat_interleave(memory_count)
+        # Row=query, column=key. Mask keys belonging to a later frame.
+        causal_mask = frame_ids.unsqueeze(0) > frame_ids.unsqueeze(1)
+        normalized = self.attention_norm(sequence)
+        attended, _ = self.attention(
+            normalized,
+            normalized,
+            normalized,
+            attn_mask=causal_mask,
+            need_weights=False,
+        )
+        updated = sequence + attended
+        updated = updated + self.ffn(self.ffn_norm(updated))
+        delta = updated - sequence
+        return (sequence + self.layerscale * delta).view_as(memory)
+
+
+class SparseTemporalMemoryEncoder(nn.Module):
+    """Persistent sparse memory carried through alternating visual stages."""
+
+    def __init__(self, hidden_dim: int, config: ModelConfig) -> None:
+        super().__init__()
+        self.frame_count = config.sparse_memory_frame_count
+        self.memory_count = config.sparse_memory_tokens
+        self.hidden_dim = hidden_dim
+        self.memory_queries = nn.Parameter(
+            torch.zeros(1, config.sparse_memory_tokens, hidden_dim)
+        )
+        self.time_embedding = nn.Parameter(
+            torch.zeros(1, config.sparse_memory_frame_count, 1, hidden_dim)
+        )
+        self.resample_query_norm = nn.LayerNorm(hidden_dim)
+        self.resample_context_norm = nn.LayerNorm(hidden_dim)
+        self.resample_attention = nn.MultiheadAttention(
+            hidden_dim,
+            config.sparse_memory_heads,
+            dropout=config.dropout,
+            batch_first=True,
+        )
+        self.resample_ffn_norm = nn.LayerNorm(hidden_dim)
+        self.resample_ffn = MLP(
+            hidden_dim,
+            int(hidden_dim * config.sparse_memory_mlp_ratio),
+            hidden_dim,
+            config.dropout,
+        )
+        self.global_layers = nn.ModuleList(
+            _SparseMemoryGlobalBlock(
+                hidden_dim=hidden_dim,
+                heads=config.sparse_memory_heads,
+                dropout=config.dropout,
+                mlp_ratio=config.sparse_memory_mlp_ratio,
+                layerscale_init=config.sparse_memory_layerscale_init,
+            )
+            for _ in range(config.sparse_memory_global_layers)
+        )
+        self.readout_query_norm = nn.LayerNorm(hidden_dim)
+        self.readout_memory_norm = nn.LayerNorm(hidden_dim)
+        self.readout_attention = nn.MultiheadAttention(
+            hidden_dim,
+            config.sparse_memory_heads,
+            dropout=config.dropout,
+            batch_first=True,
+        )
+        self.readout_layerscale = nn.Parameter(
+            torch.full((), config.sparse_memory_layerscale_init)
+        )
+        nn.init.normal_(self.memory_queries, std=0.02)
+        nn.init.normal_(self.time_embedding, std=0.02)
+
+    def initialize(self, tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Create per-frame memory immediately after patch embedding.
+
+        Dataset order is [current, older, ...]. Returned patch and memory
+        tensors are chronological [oldest, ..., current].
+        """
+        if tokens.ndim != 5:
+            raise ValueError(f"Sparse memory input must be [B,V,K,P,D], got {tokens.shape}")
+        batch, views, frames, token_count, hidden_dim = tokens.shape
+        if frames != self.frame_count:
+            raise ValueError(f"Expected {self.frame_count} memory frames, got {frames}.")
+        if hidden_dim != self.hidden_dim:
+            raise ValueError(f"Expected hidden dim {self.hidden_dim}, got {hidden_dim}.")
+        chronological = tokens.flip(2)
+        flat = chronological.reshape(batch * views * frames, token_count, hidden_dim)
+        queries = self.memory_queries.expand(flat.size(0), -1, -1)
+        attended, _ = self.resample_attention(
+            self.resample_query_norm(queries),
+            self.resample_context_norm(flat),
+            self.resample_context_norm(flat),
+            need_weights=False,
+        )
+        memory = queries + attended
+        memory = memory + self.resample_ffn(self.resample_ffn_norm(memory))
+        memory = memory.view(batch, views, frames, self.memory_count, hidden_dim)
+        memory = memory + self.time_embedding
+        return chronological, memory
+
+    def apply_global(self, memory: torch.Tensor, layer_index: int) -> torch.Tensor:
+        if not 0 <= layer_index < len(self.global_layers):
+            raise IndexError(f"Sparse memory layer index out of range: {layer_index}.")
+        return self.global_layers[layer_index](memory)
+
+    def readout(self, current_cls: torch.Tensor, current_memory: torch.Tensor) -> torch.Tensor:
+        if current_cls.ndim != 3 or current_memory.ndim != 4:
+            raise ValueError(
+                "Sparse memory readout expects CLS [B,V,D] and memory [B,V,M,D]."
+            )
+        batch, views, memory_count, hidden_dim = current_memory.shape
+        query = current_cls.reshape(batch * views, 1, hidden_dim)
+        memory = current_memory.reshape(batch * views, memory_count, hidden_dim)
+        attended, _ = self.readout_attention(
+            self.readout_query_norm(query),
+            self.readout_memory_norm(memory),
+            self.readout_memory_norm(memory),
+            need_weights=False,
+        )
+        enhanced = query + self.readout_layerscale * attended
+        return enhanced[:, 0].view(batch, views, hidden_dim)
+
+
 class VisionEncoder(nn.Module):
     """Hugging Face ViT wrapper returning one latent per frame and camera."""
 
@@ -394,6 +552,75 @@ class VisionEncoder(nn.Module):
         current = hidden[:, :, -1].reshape(batch * views, token_count, hidden_dim)
         current = self._final_layer_norm(current)
         projected = self.projection(current)
+        return projected.view(batch, views, token_count, projected.size(-1))
+
+    def encode_sparse_temporal_memory(
+        self,
+        images: torch.Tensor,
+        memory_encoder: SparseTemporalMemoryEncoder,
+    ) -> torch.Tensor:
+        """Encode all sparse frames with persistent causal memory tokens."""
+        if images.ndim != 6:
+            raise ValueError(f"Expected history images [B,K,V,C,H,W], got {images.shape}")
+        if self.register_tokens is not None:
+            raise ValueError("Sparse temporal memory currently requires vision registers to be disabled.")
+        batch, frames, views, channels, height, width = images.shape
+        if frames != memory_encoder.frame_count:
+            raise ValueError(f"Expected {memory_encoder.frame_count} memory frames, got {frames}.")
+        if views > self.camera_embedding.size(2):
+            raise ValueError(
+                f"Model has {self.camera_embedding.size(2)} camera slots but received {views} views."
+            )
+        layers = self.encoder_layers()
+        global_count = len(memory_encoder.global_layers)
+        if global_count > len(layers):
+            raise ValueError(
+                f"Memory global blocks ({global_count}) cannot exceed ViT blocks ({len(layers)})."
+            )
+
+        flat = images.permute(0, 2, 1, 3, 4, 5).reshape(
+            batch * views * frames, channels, height, width
+        )
+        embedding_kwargs = {"pixel_values": flat}
+        if "interpolate_pos_encoding" in inspect.signature(
+            self.backbone.embeddings.forward
+        ).parameters:
+            embedding_kwargs["interpolate_pos_encoding"] = True
+        hidden = self.backbone.embeddings(**embedding_kwargs)
+        token_count, hidden_dim = hidden.size(1), hidden.size(2)
+        hidden = hidden.view(batch, views, frames, token_count, hidden_dim)
+        hidden, memory = memory_encoder.initialize(hidden)
+
+        for stage in range(global_count):
+            start = stage * len(layers) // global_count
+            end = (stage + 1) * len(layers) // global_count
+            combined = torch.cat([hidden, memory], dim=3).reshape(
+                batch * views * frames,
+                token_count + memory_encoder.memory_count,
+                hidden_dim,
+            )
+            combined = self._run_encoder_layers(combined, start=start, end=end)
+            combined = combined.view(
+                batch,
+                views,
+                frames,
+                token_count + memory_encoder.memory_count,
+                hidden_dim,
+            )
+            hidden = combined[:, :, :, :token_count]
+            memory = combined[:, :, :, token_count:]
+            memory = memory_encoder.apply_global(memory, stage)
+
+        current_tokens = hidden[:, :, -1]
+        current_memory = memory[:, :, -1]
+        current_cls = memory_encoder.readout(current_tokens[:, :, 0], current_memory)
+        current_tokens = torch.cat(
+            [current_cls.unsqueeze(2), current_tokens[:, :, 1:]], dim=2
+        )
+        current_tokens = self._final_layer_norm(
+            current_tokens.reshape(batch * views, token_count, hidden_dim)
+        )
+        projected = self.projection(current_tokens)
         return projected.view(batch, views, token_count, projected.size(-1))
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
@@ -943,12 +1170,28 @@ class WorldCriticModel(nn.Module):
             if config.use_temporal_transformer
             else None
         )
+        self.sparse_memory_encoder = (
+            SparseTemporalMemoryEncoder(
+                hidden_dim=int(self.vision_encoder.backbone.config.hidden_size),
+                config=config,
+            )
+            if config.use_sparse_temporal_memory
+            else None
+        )
         if (
             self.temporal_adapter is not None
             and len(self.temporal_adapter.layers) > len(self.vision_encoder.encoder_layers())
         ):
             raise ValueError(
                 "temporal_transformer_layers cannot exceed the number of ViT blocks."
+            )
+        if (
+            self.sparse_memory_encoder is not None
+            and len(self.sparse_memory_encoder.global_layers)
+            > len(self.vision_encoder.encoder_layers())
+        ):
+            raise ValueError(
+                "sparse_memory_global_layers cannot exceed the number of ViT blocks."
             )
         self.state_vector_head = None
         if config.predict_state_vector:
@@ -1033,7 +1276,11 @@ class WorldCriticModel(nn.Module):
                 f"valid_mask and actions must be on the same device: {valid_mask.device} != {actions.device}."
             )
 
-        if self.cross_frame_encoder is not None or self.temporal_adapter is not None:
+        if (
+            self.cross_frame_encoder is not None
+            or self.temporal_adapter is not None
+            or self.sparse_memory_encoder is not None
+        ):
             if history_images is None:
                 raise ValueError("This model requires history_images for cross-frame fusion.")
             if history_images.ndim != 6:
@@ -1044,7 +1291,12 @@ class WorldCriticModel(nn.Module):
                 raise ValueError("history_images and images must have the same batch size.")
             if history_images.device != images.device:
                 raise ValueError("history_images and images must be on the same device.")
-            if self.temporal_adapter is not None:
+            if self.sparse_memory_encoder is not None:
+                current_views = self.vision_encoder.encode_sparse_temporal_memory(
+                    history_images,
+                    self.sparse_memory_encoder,
+                )[:, :, 0]
+            elif self.temporal_adapter is not None:
                 current_views = self.vision_encoder.encode_alternating_temporal(
                     history_images,
                     self.temporal_adapter,

@@ -4,7 +4,11 @@ import torch
 
 from world_critic.config import ModelConfig
 from world_critic.data import _make_temporal_mosaic
-from world_critic.model import CausalPatchTemporalAdapter, SparseCrossFrameEncoder
+from world_critic.model import (
+    CausalPatchTemporalAdapter,
+    SparseCrossFrameEncoder,
+    SparseTemporalMemoryEncoder,
+)
 
 
 class TemporalInputTest(unittest.TestCase):
@@ -114,6 +118,56 @@ class TemporalInputTest(unittest.TestCase):
         changed_oldest = adapter(changed)[:, :, -1]
 
         self.assertTrue(torch.allclose(oldest, changed_oldest, atol=1e-5, rtol=1e-5))
+
+    def sparse_memory_encoder(self, layers: int = 2):
+        config = ModelConfig(
+            latent_dim=16,
+            trunk_heads=4,
+            sparse_memory_frame_count=4,
+            sparse_memory_tokens=3,
+            sparse_memory_global_layers=layers,
+            sparse_memory_heads=4,
+            sparse_memory_mlp_ratio=2.0,
+            sparse_memory_layerscale_init=1.0e-3,
+        )
+        return SparseTemporalMemoryEncoder(hidden_dim=16, config=config)
+
+    def test_sparse_memory_is_compressed_immediately_and_persists(self):
+        encoder = self.sparse_memory_encoder()
+        tokens = torch.randn(2, 2, 4, 5, 16)
+
+        chronological, memory = encoder.initialize(tokens)
+        memory = encoder.apply_global(memory, 0)
+
+        self.assertEqual(tuple(chronological.shape), (2, 2, 4, 5, 16))
+        self.assertEqual(tuple(memory.shape), (2, 2, 4, 3, 16))
+        self.assertTrue(torch.allclose(chronological[:, :, -1], tokens[:, :, 0]))
+
+    def test_sparse_memory_blocks_future_observations(self):
+        encoder = self.sparse_memory_encoder(layers=1).eval()
+        tokens = torch.randn(2, 2, 4, 5, 16)
+        changed = tokens.clone()
+        changed[:, :, 0] += 100.0
+
+        _, memory = encoder.initialize(tokens)
+        _, changed_memory = encoder.initialize(changed)
+        oldest = encoder.apply_global(memory, 0)[:, :, 0]
+        changed_oldest = encoder.apply_global(changed_memory, 0)[:, :, 0]
+
+        self.assertTrue(torch.allclose(oldest, changed_oldest, atol=1e-5, rtol=1e-5))
+
+    def test_sparse_memory_carries_history_to_current_readout(self):
+        encoder = self.sparse_memory_encoder(layers=2).eval()
+        tokens = torch.randn(2, 2, 4, 5, 16, requires_grad=True)
+        chronological, memory = encoder.initialize(tokens)
+        for index in range(2):
+            memory = encoder.apply_global(memory, index)
+        output = encoder.readout(chronological[:, :, -1, 0], memory[:, :, -1])
+        output.square().mean().backward()
+
+        historical_grad = tokens.grad[:, :, 1:].abs().sum()
+        self.assertGreater(float(historical_grad), 0.0)
+        self.assertIsNotNone(encoder.memory_queries.grad)
 
 
 if __name__ == "__main__":

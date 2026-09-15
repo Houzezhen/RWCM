@@ -105,6 +105,16 @@ class ModelConfig:
     temporal_transformer_heads: int = 4
     temporal_transformer_dim: int = 192
     temporal_transformer_mlp_ratio: float = 2.0
+    # Persistent sparse visual memory. Learned queries compress every frame
+    # immediately after patch embedding; memory tokens then travel through all
+    # frame-wise ViT stages and communicate through block-causal global layers.
+    use_sparse_temporal_memory: bool = False
+    sparse_memory_frame_count: int = 4
+    sparse_memory_tokens: int = 8
+    sparse_memory_global_layers: int = 6
+    sparse_memory_heads: int = 8
+    sparse_memory_mlp_ratio: float = 2.0
+    sparse_memory_layerscale_init: float = 1.0e-3
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
     # 通过交叉注意力从历史帧 token 中吸收时序不变信息再注回各时间步。
     # 与 vision.num_register_tokens（空间 register，ViT 内部）相互独立，可分别消融。
@@ -375,9 +385,9 @@ def validate_train_config(config: TrainConfig) -> None:
         if config.model.cross_frame_count != len(config.data.history_offsets):
             raise ValueError("cross_frame_count must match the number of history_offsets.")
     if config.model.use_temporal_transformer:
-        if config.model.use_cross_frame_tokens:
+        if config.model.use_cross_frame_tokens or config.model.use_sparse_temporal_memory:
             raise ValueError(
-                "use_temporal_transformer and use_cross_frame_tokens are mutually exclusive."
+                "temporal fusion implementations are mutually exclusive."
             )
         if not config.data.history_frames:
             raise ValueError("use_temporal_transformer=true requires data.history_frames=true.")
@@ -386,6 +396,21 @@ def validate_train_config(config: TrainConfig) -> None:
         if config.model.temporal_transformer_count != len(config.data.history_offsets):
             raise ValueError(
                 "temporal_transformer_count must match the number of history_offsets."
+            )
+    if config.model.use_sparse_temporal_memory:
+        if config.model.use_cross_frame_tokens:
+            raise ValueError("temporal fusion implementations are mutually exclusive.")
+        if not config.data.history_frames:
+            raise ValueError("use_sparse_temporal_memory=true requires data.history_frames=true.")
+        if config.data.history_offsets is None:
+            raise ValueError("use_sparse_temporal_memory=true requires data.history_offsets.")
+        if config.model.sparse_memory_frame_count != len(config.data.history_offsets):
+            raise ValueError(
+                "sparse_memory_frame_count must match the number of history_offsets."
+            )
+        if config.model.vision.num_register_tokens > 0:
+            raise ValueError(
+                "Sparse temporal memory does not support vision register tokens in its first ablation."
             )
     if config.model.cross_frame_count < 1 or config.model.cross_frame_layers < 1:
         raise ValueError("cross_frame_count and cross_frame_layers must be positive.")
@@ -417,6 +442,18 @@ def validate_train_config(config: TrainConfig) -> None:
         )
     if config.model.temporal_transformer_mlp_ratio <= 0:
         raise ValueError("model.temporal_transformer_mlp_ratio must be positive.")
+    if config.model.sparse_memory_frame_count < 1:
+        raise ValueError("model.sparse_memory_frame_count must be positive.")
+    if config.model.sparse_memory_tokens < 1:
+        raise ValueError("model.sparse_memory_tokens must be positive.")
+    if config.model.sparse_memory_global_layers < 1:
+        raise ValueError("model.sparse_memory_global_layers must be positive.")
+    if config.model.sparse_memory_heads < 1:
+        raise ValueError("model.sparse_memory_heads must be positive.")
+    if config.model.sparse_memory_mlp_ratio <= 0:
+        raise ValueError("model.sparse_memory_mlp_ratio must be positive.")
+    if config.model.sparse_memory_layerscale_init <= 0:
+        raise ValueError("model.sparse_memory_layerscale_init must be positive.")
     if config.model.dynamics_depth < 1:
         raise ValueError("model.dynamics_depth must be positive so dynamics remains action-conditioned.")
     if not (0.0 <= config.data.val_fraction < 1.0):

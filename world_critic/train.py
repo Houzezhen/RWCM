@@ -357,10 +357,14 @@ def run() -> None:
                 payload["model"], strict=False
             )
             allowed_missing = {
-                key for key in missing if key.startswith("temporal_adapter.")
+                key
+                for key in missing
+                if key.startswith(("temporal_adapter.", "sparse_memory_encoder."))
             }
             allowed_unexpected = {
-                key for key in unexpected if key.startswith("cross_frame_encoder.")
+                key
+                for key in unexpected
+                if key.startswith(("cross_frame_encoder.", "temporal_adapter."))
             }
             if set(missing) != allowed_missing or set(unexpected) != allowed_unexpected:
                 raise RuntimeError(
@@ -455,6 +459,25 @@ def run() -> None:
                                 if key.endswith("loss") and key != "loss"
                             },
                         }
+                        sparse_memory = getattr(
+                            unwrap_model(model), "sparse_memory_encoder", None
+                        )
+                        if sparse_memory is not None:
+                            layer_scales = torch.stack(
+                                [layer.layerscale.detach() for layer in sparse_memory.global_layers]
+                            )
+                            printable.update(
+                                {
+                                    "sparse_memory_layerscale_mean": float(layer_scales.mean()),
+                                    "sparse_memory_layerscale_abs_max": float(
+                                        layer_scales.abs().max()
+                                    ),
+                                    "sparse_memory_readout_scale": float(
+                                        sparse_memory.readout_layerscale.detach()
+                                    ),
+                                    "lr_groups": scheduler.get_last_lr(),
+                                }
+                            )
                         print(json.dumps(printable))
                     if ctx.is_main:
                         progress.set_postfix(loss=f"{float(loss_parts['loss']):.4f}", step=global_step)

@@ -352,3 +352,117 @@ Frame-wise block 是原始 ViT block：每帧内部的 `CLS+patch` 做 self-atte
 1. temporal 模块相对 warm-start 起点在补回损失——第 5 轮 OOD Pearson 0.807 高于 VGGT 原始的 0.783——但仍显著落后 Image-B4 的 0.851，MSE 与 Pearson 两项 CI 均排除 0。
 2. 剩余 5 轮 lr 已衰减至很低，填平 Pearson 0.044 + MSE 8% 差距的可能性不大。本预检倾向否决方向。
 3. 处置：s3072 按原协议训满 10 轮，用 `deploy.pt` 做正式比较以与预检互相印证；若正式结果仍输给 Image-B4，则 s42 组不再训练，按 §10.3 门禁冻结该结构。此预检只用于提前决策，不作为最终判定依据。
+
+## 11. Sparse Persistent Memory（下一候选）
+
+### 11.1 动机与对上一版的诊断
+
+§10 的 dense alternating 模型虽然在代码中保留四帧 hidden tokens 直到第 12 个 ViT block，但它没有独立、可显式读出的历史记忆流。每个 dense global block 使用零初始化 residual gate：初始时只有 gate 本身能立即得到有效梯度，gate 打开前 attention/QKV/MLP 主体的梯度被乘到接近 0。最终模型又只读取当前帧 CLS，因此历史信息必须经过多次弱门控 attention 间接传到当前 CLS。
+
+第 5 轮 OOD 预检已经表明该结构在补回旧 VGGT 损失，但仍显著落后 Image-B4。新候选不再增加 dense global patch attention，而是利用 S4-Image 的关键证据：历史从输入开始存在非常重要，但四帧保持完整分辨率并非必要条件。目标是用少量 persistent memory tokens 贯穿全部视觉层。
+
+### 11.2 精确结构
+
+输入顺序在 dataset 中为 `[t,t-20,t-40,t-60]`，进入 memory encoder 后翻转为因果时间顺序 `[t-60,t-40,t-20,t]`。
+
+```text
+四帧图像 [t-60, t-40, t-20, t]
+        |
+共享 ViT patch embedding
+        |
+每帧 X_i: [197, 768]（CLS + 196 patches）
+        |
+共享 learned-query attention resampler
+Q_mem: [8, 768]
+M_i = Resampler(Q_mem, X_i): [8, 768]
+        |
+Stage 1: Frame-wise ViT blocks 1-2 on [X_i, M_i]
+         -> Causal Global Attention on four-frame M only
+        |
+Stage 2: Frame-wise ViT blocks 3-4 on [X_i, M_i]
+         -> Causal Global Attention on four-frame M only
+        |
+... 6 stages; X_i and M_i both persist ...
+        |
+current CLS cross-attends current M
+        |
+current CLS + LayerScale * memory summary
+        |
+原 projection / view pooling / language fusion / WCM value head
+```
+
+压缩只在 patch embedding 后初始化一次，但 memory 不是静态摘要。每个 frame-wise stage 将 `[X_i,M_i]` 拼成 `205` 个 token 送入原始共享 ViT block，因此存在双向更新：patch 持续刷新 memory，memory 也持续把历史摘要注回 patch/CLS。每个 stage 后只把 `M_i` 放入跨帧 global attention；完整 patch 不跨帧做 dense attention。
+
+### 11.3 压缩器
+
+每帧共享 8 个可学习 query：
+
+```text
+M_i^0 = Q_mem + CrossAttention(LN(Q_mem), LN(X_i), LN(X_i))
+M_i^0 = M_i^0 + FFN(LN(M_i^0)) + time_embedding_i
+```
+
+不使用 average pooling。不同 learned queries 可自行分工捕获机械臂/夹爪、按钮、接触区域、相对位置、阶段和背景等信息。第一版不加 slot diversity 或正交正则，避免引入额外实验变量。
+
+### 11.4 Global memory 的严格因果性
+
+每帧只有 `m=8` 个 memory token，global attention 的序列长度为 `K*m=4*8=32`，而 dense alternating 的长度为 `4*197=788`。全局 attention 矩阵由约 `788²` 降为 `32²`。
+
+帧级 block-causal mask：
+
+```text
+M_t-60 <- {M_t-60}
+M_t-40 <- {M_t-60, M_t-40}
+M_t-20 <- {M_t-60, M_t-40, M_t-20}
+M_t    <- {M_t-60, M_t-40, M_t-20, M_t}
+```
+
+同一帧的 8 个 memory token 双向可见；任何历史帧不能读取更晚 observation。测试必须满足：修改当前帧输入不能改变最老帧 global-memory 输出；当前输出对历史帧输入具有非零梯度。
+
+### 11.5 初始化与优化
+
+- 原始 12 个 frame-wise ViT blocks、projection、语言和 WCM heads 从旧 Sparse-VGGT checkpoint warm-start；
+- 旧 `cross_frame_encoder.*` 明确忽略；新 `sparse_memory_encoder.*` 明确列为 missing/initialized，其他 key 不允许静默不匹配；
+- global memory block 不使用 zero gate，改用可学习 LayerScale，初值 `1e-3`，保证第一步 resampler、global QKV/MLP 和 readout 都有梯度；
+- memory 模块使用 `temporal_lr_scale=10`，共享 ViT/WCM 保持 base lr `1e-5`；
+- 这是结构迁移微调，不恢复旧 optimizer、scheduler 或 RNG。
+
+### 11.6 配置、实现和运行
+
+实现入口：
+
+- `world_critic/model.py::SparseTemporalMemoryEncoder`
+- `world_critic/model.py::VisionEncoder.encode_sparse_temporal_memory`
+- `model.use_sparse_temporal_memory=true`
+
+实验文件：
+
+- `configs/wcm_sparse_memory_exp_s3072.yaml`
+- `configs/wcm_sparse_memory_exp_s42.yaml`
+- `scripts/smoke_test_sparse_memory.py`
+- `25_run_sparse_memory_pair.sh`
+
+服务器运行：
+
+```bash
+cd ~/code_1/WCM
+git switch cross-frame-wcm
+git pull --ff-only
+CUDA_VISIBLE_DEVICES=0 bash 25_run_sparse_memory_pair.sh
+```
+
+脚本先跑单元测试和 batch-4 真实 CUDA forward/backward/AdamW smoke。smoke 必须报告 `memory_queries`、`resampler_qkv`、`first_global_qkv`、`readout_qkv` 四类非零梯度以及峰值显存；门禁通过后训练两 seed，最后生成相对 Image-B4 的共同 endpoint paired JSON。comparison 显式传递模型 seed，避免旧报告中 s42 JSON 被默认 bootstrap seed 3072 污染元数据。
+
+训练日志每 `log_every` 额外记录 `sparse_memory_layerscale_mean`、`sparse_memory_layerscale_abs_max`、`sparse_memory_readout_scale` 和各参数组学习率。若 LayerScale 长期停留在初值附近、塌到 0 或异常放大，应先判为历史通路未学开/不稳定，不能仅凭最终 value 指标解释 memory 机制。
+
+### 11.7 判定门禁
+
+SparseMemory 的强基线仍是相同 batch/seed 的 Image-B4，而不是原始 WCM。晋级要求：
+
+1. OOD MSE 或 centered MSE 的 episode-paired 95% CI 上界 `<0`；
+2. OOD Pearson 不系统性下降；
+3. 两 seed 不出现相反方向回归；
+4. mean bias 不以牺牲 centered MSE 的方式改善；
+5. 若 s3072 第 5 轮预检已在 MSE/Pearson 两项显著劣于 Image-B4，可先训满 s3072 定版，再决定是否启动 s42。
+
+若该结构仍不能超过 Image-B4，应接受当前监督信号只足以稳定利用输入级 mosaic 的结论，停止继续增加时序模块复杂度，转向 return/risk/Q 监督和下游策略收益验证。
