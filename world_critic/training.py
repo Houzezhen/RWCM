@@ -98,8 +98,9 @@ def build_model(config: TrainConfig) -> WorldCriticModel:
 
 
 def create_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim.Optimizer:
-    lr_scale = getattr(config.optim, "register_lr_scale", 1.0)
-    if lr_scale == 1.0:
+    register_lr_scale = getattr(config.optim, "register_lr_scale", 1.0)
+    temporal_lr_scale = getattr(config.optim, "temporal_lr_scale", 1.0)
+    if register_lr_scale == 1.0 and temporal_lr_scale == 1.0:
         parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
         if not parameters:
             raise ValueError("Model has no trainable parameters.")
@@ -113,17 +114,31 @@ def create_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim
     # 空间 register（vision.register_tokens）、时间 register（temporal_registers.registers）、
     # 块融合寄存（block_register_fusion 的 *_registers）都命中；块融合的 attn 投影
     # 参数名含 block_register_fusion 但不含 registers，落回主组（避免整块网络被放大）。
-    main, register = [], []
+    main, register, temporal = [], [], []
     for name, parameter in model.named_parameters():
         if not parameter.requires_grad:
             continue
-        (register if "register_tokens" in name or "temporal_registers" in name
-                   or "spatial_registers" in name else main).append(parameter)
-    if not main and not register:
+        if name.startswith("temporal_adapter."):
+            temporal.append(parameter)
+        elif (
+            "register_tokens" in name
+            or "temporal_registers" in name
+            or "spatial_registers" in name
+        ):
+            register.append(parameter)
+        else:
+            main.append(parameter)
+    if not main and not register and not temporal:
         raise ValueError("Model has no trainable parameters.")
     groups = [{"params": main, "lr": config.optim.lr}]
     if register:
-        groups.append({"params": register, "lr": config.optim.lr * lr_scale})
+        groups.append(
+            {"params": register, "lr": config.optim.lr * register_lr_scale}
+        )
+    if temporal:
+        groups.append(
+            {"params": temporal, "lr": config.optim.lr * temporal_lr_scale}
+        )
     return torch.optim.AdamW(
         groups,
         lr=config.optim.lr,

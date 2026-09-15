@@ -49,6 +49,121 @@ class MLP(nn.Module):
         return self.net(value)
 
 
+class _CausalGlobalAttentionBlock(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        adapter_dim: int,
+        heads: int,
+        dropout: float,
+        mlp_ratio: float,
+    ) -> None:
+        super().__init__()
+        self.input_norm = nn.LayerNorm(hidden_dim)
+        self.input_projection = nn.Linear(hidden_dim, adapter_dim)
+        self.query_norm = nn.LayerNorm(adapter_dim)
+        self.context_norm = nn.LayerNorm(adapter_dim)
+        self.attention = nn.MultiheadAttention(
+            adapter_dim,
+            heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.ffn_norm = nn.LayerNorm(adapter_dim)
+        self.ffn = MLP(adapter_dim, int(adapter_dim * mlp_ratio), adapter_dim, dropout)
+        self.output_projection = nn.Linear(adapter_dim, hidden_dim)
+        self.residual_gate = nn.Parameter(torch.zeros(()))
+
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        time_embedding: torch.Tensor,
+    ) -> torch.Tensor:
+        if tokens.ndim != 5:
+            raise ValueError(f"Global attention expects [B,V,K,N,D], got {tokens.shape}")
+        batch, views, frames, token_count, hidden_dim = tokens.shape
+        contextual = self.input_projection(self.input_norm(tokens)) + time_embedding
+        sequence = contextual.reshape(batch * views, frames * token_count, -1)
+        frame_ids = torch.arange(frames, device=tokens.device).repeat_interleave(token_count)
+        # Chronological frame order: a query at frame q may read keys k <= q.
+        causal_mask = frame_ids.unsqueeze(0) > frame_ids.unsqueeze(1)
+        attended, _ = self.attention(
+            self.query_norm(sequence),
+            self.context_norm(sequence),
+            self.context_norm(sequence),
+            attn_mask=causal_mask,
+            need_weights=False,
+        )
+        updated = sequence + attended
+        updated = updated + self.ffn(self.ffn_norm(updated))
+        updated = updated.view(batch, views, frames, token_count, -1)
+        update = self.output_projection(updated)
+        gate = torch.tanh(self.residual_gate)
+        return tokens + gate * update
+
+
+class CausalPatchTemporalAdapter(nn.Module):
+    """Global blocks for alternating frame-wise/cross-frame ViT encoding.
+
+    Public inputs use dataset order [current, older, ...]. Internally, frames
+    are chronological so the block-causal mask lets every patch read all
+    spatial tokens in its own and earlier frames. All frames remain alive for
+    the next frame-wise ViT stage. Zero-initialized gates make the complete
+    alternating encoder initially identical to the pretrained frame-wise ViT.
+    """
+
+    def __init__(
+        self,
+        hidden_dim: int,
+        frame_count: int,
+        heads: int,
+        dropout: float,
+        mlp_ratio: float,
+        layers: int = 1,
+        adapter_dim: int | None = None,
+    ) -> None:
+        super().__init__()
+        adapter_dim = hidden_dim if adapter_dim is None else adapter_dim
+        if adapter_dim % heads != 0:
+            raise ValueError(
+                f"Temporal adapter dim {adapter_dim} must be divisible by heads {heads}."
+            )
+        self.frame_count = frame_count
+        self.hidden_dim = hidden_dim
+        self.time_embedding = nn.Parameter(torch.zeros(1, frame_count, 1, adapter_dim))
+        if layers < 1:
+            raise ValueError(f"Temporal adapter layers must be positive, got {layers}.")
+        self.layers = nn.ModuleList(
+            _CausalGlobalAttentionBlock(
+                hidden_dim, adapter_dim, heads, dropout, mlp_ratio
+            )
+            for _ in range(layers)
+        )
+        nn.init.normal_(self.time_embedding, std=0.02)
+
+    def to_chronological(self, tokens: torch.Tensor) -> torch.Tensor:
+        if tokens.ndim != 5:
+            raise ValueError(f"Temporal adapter expects [B,V,K,N,D], got {tokens.shape}")
+        frames, hidden_dim = tokens.size(2), tokens.size(-1)
+        if frames != self.frame_count:
+            raise ValueError(f"Expected {self.frame_count} temporal frames, got {frames}.")
+        if hidden_dim != self.hidden_dim:
+            raise ValueError(f"Expected hidden dim {self.hidden_dim}, got {hidden_dim}.")
+        return tokens.flip(2)
+
+    def apply_global(self, chronological: torch.Tensor, layer_index: int) -> torch.Tensor:
+        if not 0 <= layer_index < len(self.layers):
+            raise IndexError(f"Global layer index out of range: {layer_index}.")
+        return self.layers[layer_index](chronological, self.time_embedding.flip(1))
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Apply all global blocks and return all frames in dataset order."""
+        chronological = self.to_chronological(tokens)
+        for index in range(len(self.layers)):
+            chronological = self.apply_global(chronological, index)
+        return chronological.flip(2)
+
+
 class VisionEncoder(nn.Module):
     """Hugging Face ViT wrapper returning one latent per frame and camera."""
 
@@ -134,6 +249,19 @@ class VisionEncoder(nn.Module):
             hidden = self._last_hidden_state(layer(hidden))
         return hidden
 
+    def _run_encoder_layers(
+        self,
+        tokens: torch.Tensor,
+        start: int = 0,
+        end: int | None = None,
+    ) -> torch.Tensor:
+        layers = self.encoder_layers()
+        stop = len(layers) if end is None else end
+        hidden = tokens
+        for layer in layers[start:stop]:
+            hidden = self._last_hidden_state(layer(hidden))
+        return hidden
+
     def _final_layer_norm(self, tokens: torch.Tensor) -> torch.Tensor:
         layer_norm = getattr(self.backbone, "layernorm", None)
         if layer_norm is None:
@@ -204,6 +332,69 @@ class VisionEncoder(nn.Module):
         hidden = self._encode_flat_tokens(flat)
         tokens = self.projection(hidden)
         return tokens.view(batch, time, views, tokens.size(1), tokens.size(2))
+
+    def encode_alternating_temporal(
+        self,
+        images: torch.Tensor,
+        adapter: CausalPatchTemporalAdapter,
+    ) -> torch.Tensor:
+        """Alternate shared frame-wise ViT and causal global attention.
+
+        ``images`` is ``[B,K,V,C,H,W]`` ordered current to oldest. All frames
+        remain represented through every stage. Original ViT layers provide
+        shared frame-wise attention; zero-gated global blocks alternate
+        between evenly partitioned groups of those layers. Only the final
+        current-frame tokens are returned as ``[B,V,N,D]``.
+        """
+        if images.ndim != 6:
+            raise ValueError(f"Expected history images [B,K,V,C,H,W], got {images.shape}")
+        if self.register_tokens is not None and self.register_insert != "early":
+            raise ValueError("Temporal adapter requires early register insertion when registers are enabled.")
+        batch, frames, views, channels, height, width = images.shape
+        if frames != adapter.frame_count:
+            raise ValueError(f"Expected {adapter.frame_count} temporal frames, got {frames}.")
+        if views > self.camera_embedding.size(2):
+            raise ValueError(
+                f"Model has {self.camera_embedding.size(2)} camera slots but received {views} views."
+            )
+        layers = self.encoder_layers()
+        global_count = len(adapter.layers)
+        if global_count > len(layers):
+            raise ValueError(
+                f"Global blocks ({global_count}) cannot exceed ViT blocks ({len(layers)})."
+            )
+        # Keep frame adjacency explicit while flattening for the shared ViT.
+        flat = images.permute(0, 2, 1, 3, 4, 5).reshape(
+            batch * views * frames, channels, height, width
+        )
+        embedding_kwargs = {"pixel_values": flat}
+        if "interpolate_pos_encoding" in inspect.signature(
+            self.backbone.embeddings.forward
+        ).parameters:
+            embedding_kwargs["interpolate_pos_encoding"] = True
+        hidden = self.backbone.embeddings(**embedding_kwargs)
+        if self.register_tokens is not None:
+            hidden = torch.cat(
+                [hidden, self.register_tokens.expand(hidden.size(0), -1, -1)], dim=1
+            )
+        token_count, hidden_dim = hidden.size(1), hidden.size(2)
+        hidden = hidden.view(batch, views, frames, token_count, hidden_dim)
+        hidden = adapter.to_chronological(hidden)
+        for stage in range(global_count):
+            start = stage * len(layers) // global_count
+            end = (stage + 1) * len(layers) // global_count
+            framewise = hidden.reshape(
+                batch * views * frames, token_count, hidden_dim
+            )
+            framewise = self._run_encoder_layers(framewise, start=start, end=end)
+            hidden = framewise.view(batch, views, frames, token_count, hidden_dim)
+            hidden = adapter.apply_global(hidden, stage)
+
+        # Chronological order makes the last frame the current endpoint.
+        current = hidden[:, :, -1].reshape(batch * views, token_count, hidden_dim)
+        current = self._final_layer_norm(current)
+        projected = self.projection(current)
+        return projected.view(batch, views, token_count, projected.size(-1))
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """
@@ -739,6 +930,26 @@ class WorldCriticModel(nn.Module):
         self.context_trunk = ActionFreeContextTrunk(config)
         self.value_head = MLP(config.latent_dim, config.value_hidden_dim, 1, config.dropout)
         self.dynamics = ActionConditionedDynamics(config)
+        self.temporal_adapter = (
+            CausalPatchTemporalAdapter(
+                hidden_dim=int(self.vision_encoder.backbone.config.hidden_size),
+                frame_count=config.temporal_transformer_count,
+                heads=config.temporal_transformer_heads,
+                dropout=config.dropout,
+                mlp_ratio=config.temporal_transformer_mlp_ratio,
+                layers=config.temporal_transformer_layers,
+                adapter_dim=config.temporal_transformer_dim,
+            )
+            if config.use_temporal_transformer
+            else None
+        )
+        if (
+            self.temporal_adapter is not None
+            and len(self.temporal_adapter.layers) > len(self.vision_encoder.encoder_layers())
+        ):
+            raise ValueError(
+                "temporal_transformer_layers cannot exceed the number of ViT blocks."
+            )
         self.state_vector_head = None
         if config.predict_state_vector:
             if config.state_dim is None:
@@ -822,7 +1033,7 @@ class WorldCriticModel(nn.Module):
                 f"valid_mask and actions must be on the same device: {valid_mask.device} != {actions.device}."
             )
 
-        if self.cross_frame_encoder is not None:
+        if self.cross_frame_encoder is not None or self.temporal_adapter is not None:
             if history_images is None:
                 raise ValueError("This model requires history_images for cross-frame fusion.")
             if history_images.ndim != 6:
@@ -833,8 +1044,14 @@ class WorldCriticModel(nn.Module):
                 raise ValueError("history_images and images must have the same batch size.")
             if history_images.device != images.device:
                 raise ValueError("history_images and images must be on the same device.")
-            history_tokens = self.vision_encoder.encode_tokens(history_images)
-            current_views = self.cross_frame_encoder(history_tokens)
+            if self.temporal_adapter is not None:
+                current_views = self.vision_encoder.encode_alternating_temporal(
+                    history_images,
+                    self.temporal_adapter,
+                )[:, :, 0]
+            else:
+                history_tokens = self.vision_encoder.encode_tokens(history_images)
+                current_views = self.cross_frame_encoder(history_tokens)
             views = current_views.size(1)
             current_views = current_views + self.vision_encoder.camera_embedding[:, 0, :views]
             current_state = self.pool_views(current_views.unsqueeze(1))

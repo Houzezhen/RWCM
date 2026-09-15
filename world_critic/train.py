@@ -353,9 +353,32 @@ def run() -> None:
         best_metric = math.inf
         if config.init_from:
             payload = load_checkpoint_payload(config.init_from, ctx)
-            unwrap_model(model).load_state_dict(payload["model"], strict=True)
+            missing, unexpected = unwrap_model(model).load_state_dict(
+                payload["model"], strict=False
+            )
+            allowed_missing = {
+                key for key in missing if key.startswith("temporal_adapter.")
+            }
+            allowed_unexpected = {
+                key for key in unexpected if key.startswith("cross_frame_encoder.")
+            }
+            if set(missing) != allowed_missing or set(unexpected) != allowed_unexpected:
+                raise RuntimeError(
+                    "Warm-start checkpoint is incompatible: "
+                    f"missing={sorted(set(missing) - allowed_missing)}, "
+                    f"unexpected={sorted(set(unexpected) - allowed_unexpected)}"
+                )
             if ctx.is_main:
-                print(json.dumps({"init_from": config.init_from, "epoch": payload.get("epoch")}))
+                print(
+                    json.dumps(
+                        {
+                            "init_from": config.init_from,
+                            "epoch": payload.get("epoch"),
+                            "missing_initialized": sorted(allowed_missing),
+                            "ignored_legacy": sorted(allowed_unexpected),
+                        }
+                    )
+                )
         if config.resume:
             checkpoint = load_training_checkpoint(
                 config.resume,

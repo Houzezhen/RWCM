@@ -279,3 +279,59 @@ VGGT 的 centered MSE 同样全线更高，说明这次回归不是校准偏移�
 门禁要求 Sparse-VGGT 在 OOD centered MSE 或 Pearson 上胜过 Image-B4 且无反向 seed 回归。实际两个指标在两个 seed 上均未超过对照，且不是方向翻转而是系统性劣化，故判为未通过，停止这版 token fusion 实现，不调层数、注意力头数、温度或时间槽 embedding 追单点最优。
 
 Batch-4 重训的 Image-B4 明显弱于 §2 的 batch-8 S4-Image（OOD MSE 0.0456 vs 0.038883、0.0534 vs 0.035875），说明该线上 batch size 影响不可忽略。主比较本身是同为 batch 4 的公平对照，但 S4-Image 仍是当前 OOD 指标最好的输入方案，后续若继续跨帧方向应回到 mosaic 表示上寻找增量，而不是维持全分辨率 patch tokens。
+
+## 10. 交替式 causal frame/global transformer（下一步）
+
+### 10.1 设计修正
+
+上一版 Sparse-VGGT 的 cross-frame 模块放在每帧 ViT 完整编码之后，并且由一个当前 CLS query 读取所有帧的 CLS+patch。该路径对跨帧空间对应的交互过晚，且会把大量 patch 信息压缩到单个 query，不能充分利用末端执行器和按钮的位移证据。
+
+下一版改为真正的 **frame-wise / global attention 交替视觉编码器**，不是在最终 latent/trunk 后叠加 transformer，也不是只在 ViT 中段交互一次：
+
+```text
+四帧共享 patch embedding
+        |
+2 个 Frame-wise ViT block（帧内 attention，共享权重）
+        |
+1 个 block-causal Global attention（四帧全部 patch）
+        |
+2 个 Frame-wise ViT block
+        |
+1 个 block-causal Global attention
+        |
+... 共 6 个 stage，四帧始终保留 ...
+        |
+只读取当前帧 CLS
+        |
+原 WCM view pooling / language fusion / value head
+```
+
+Frame-wise block 是原始 ViT block：每帧内部的 `CLS+patch` 做 self-attention，四帧使用同一套 block 权重，但该步不跨帧。Global block 将四帧全部 `CLS+patch` 展开做 self-attention，允许跨帧、跨空间位置匹配运动目标；更新后的四帧 token 全部保留并进入下一轮 frame-wise block，不在中途丢弃历史帧。
+
+历史输入按 `[t,t-20,t-40,t-60]` 提供，内部改排为 `[t-60,t-40,t-20,t]`。Global attention 使用帧级块因果 mask：帧 `i` 的任意 patch 只能读取本帧和更早帧的全部 patch，同一帧内双向可见；较早帧绝不能读取更晚 observation。该 mask 应通过“修改当前帧不影响最老帧输出”的单元测试。
+
+模块由 `model.use_temporal_transformer=true` 开启。ViT-base 的 12 个 frame-wise block 默认划成 6 个 stage，即每 2 个 frame-wise block 后插入 1 个 global block。为保持轻量，global attention 在 `192D` adapter 空间运行（4 heads、MLP ratio 2），再投影回 ViT 的 `768D`。每个 global block 有独立的零初始化残差门控，使 warm-start 初始行为等价于原始逐帧 ViT；新增 `temporal_adapter.*` 使用 10× learning rate，已训练的共享 ViT/WCM 参数保持 base learning rate。
+
+这一路的 dense attention 计算复杂度约为 `O((K·P)²)`，但 QKV/MLP 通道缩至 192D；服务器 smoke 必须报告真实峰值显存。若 batch 4 不可行，应先减小 batch 并保持与 Image 对照相同的 effective batch/optimizer steps，不能改变模型语义来迁就显存。
+
+### 10.2 Warm-start 方式
+
+配置：
+
+- `configs/wcm_sparse_temporal_exp_s3072.yaml`
+- `configs/wcm_sparse_temporal_exp_s42.yaml`
+- `24_run_sparse_temporal_pair.sh`
+
+默认从对应的 Sparse-VGGT `deploy.pt` 加载共享的 ViT、语言、trunk、value 和 dynamics 权重；旧的末端 `cross_frame_encoder.*` 参数被明确忽略，6 个新 global block 的 `temporal_adapter.*` 参数初始化。训练日志会打印 missing/ignored keys，禁止静默丢权重。这是结构迁移微调，不恢复旧 optimizer/scheduler，也不等价于从旧 VGGT 输出继续训练。
+
+如果只有 S4-Image 权重，也可以作为迁移初始化加载共享参数，但由于 mosaic 与四帧独立输入不同，这不应称为严格续训，需在报告中单独标记。
+
+### 10.3 判定门禁
+
+先只跑两个 seed，使用 batch-4、10 epoch、共同 endpoint，与 Image-B4 比较。只有满足以下条件才保留交替结构：
+
+1. OOD paired episode bootstrap 的 MSE 或 centered-MSE 95% CI 上界 `< 0`；
+2. 两个 seed 均不出现反向回归，最好扩展到 `3/4` seed；
+3. Pearson 不系统性下降，且 mean bias 不明显恶化。
+
+若交替结构仍不超过 Image-B4，则冻结 S4-Image 作为跨帧视觉主线，不再在失败的 full patch-token 路径上叠加 register 或继续调 attention 超参。

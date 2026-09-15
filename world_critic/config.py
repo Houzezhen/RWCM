@@ -96,6 +96,15 @@ class ModelConfig:
     use_cross_frame_tokens: bool = False
     cross_frame_count: int = 4
     cross_frame_layers: int = 2
+    # Alternating frame-wise ViT and block-causal global attention. All sparse
+    # frames remain alive through the visual encoder. Global blocks update all
+    # frames while preventing any frame from reading a later observation.
+    use_temporal_transformer: bool = False
+    temporal_transformer_count: int = 4
+    temporal_transformer_layers: int = 6
+    temporal_transformer_heads: int = 4
+    temporal_transformer_dim: int = 192
+    temporal_transformer_mlp_ratio: float = 2.0
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
     # 通过交叉注意力从历史帧 token 中吸收时序不变信息再注回各时间步。
     # 与 vision.num_register_tokens（空间 register，ViT 内部）相互独立，可分别消融。
@@ -143,6 +152,9 @@ class OptimConfig:
     # register token 单独学习率缩放（相对 base lr）。>1 让新加入的 register
     # embedding 冷启动更快；仅对名称含 "register_tokens" 的参数生效。
     register_lr_scale: float = 1.0
+    # Newly initialized causal global-attention adapters need to open their
+    # zero residual gates faster than a warm-started vision backbone.
+    temporal_lr_scale: float = 1.0
 
 
 @dataclass
@@ -362,6 +374,19 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError("use_cross_frame_tokens=true requires data.history_offsets.")
         if config.model.cross_frame_count != len(config.data.history_offsets):
             raise ValueError("cross_frame_count must match the number of history_offsets.")
+    if config.model.use_temporal_transformer:
+        if config.model.use_cross_frame_tokens:
+            raise ValueError(
+                "use_temporal_transformer and use_cross_frame_tokens are mutually exclusive."
+            )
+        if not config.data.history_frames:
+            raise ValueError("use_temporal_transformer=true requires data.history_frames=true.")
+        if config.data.history_offsets is None:
+            raise ValueError("use_temporal_transformer=true requires data.history_offsets.")
+        if config.model.temporal_transformer_count != len(config.data.history_offsets):
+            raise ValueError(
+                "temporal_transformer_count must match the number of history_offsets."
+            )
     if config.model.cross_frame_count < 1 or config.model.cross_frame_layers < 1:
         raise ValueError("cross_frame_count and cross_frame_layers must be positive.")
     if config.data.history_size > config.model.max_history:
@@ -378,6 +403,20 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("model.language.fusion_layers must be positive.")
     if config.model.language.fusion_heads < 1:
         raise ValueError("model.language.fusion_heads must be positive.")
+    if config.model.temporal_transformer_count < 1:
+        raise ValueError("model.temporal_transformer_count must be positive.")
+    if config.model.temporal_transformer_layers < 1:
+        raise ValueError("model.temporal_transformer_layers must be positive.")
+    if config.model.temporal_transformer_heads < 1:
+        raise ValueError("model.temporal_transformer_heads must be positive.")
+    if config.model.temporal_transformer_dim < 1:
+        raise ValueError("model.temporal_transformer_dim must be positive.")
+    if config.model.temporal_transformer_dim % config.model.temporal_transformer_heads != 0:
+        raise ValueError(
+            "temporal_transformer_dim must be divisible by temporal_transformer_heads."
+        )
+    if config.model.temporal_transformer_mlp_ratio <= 0:
+        raise ValueError("model.temporal_transformer_mlp_ratio must be positive.")
     if config.model.dynamics_depth < 1:
         raise ValueError("model.dynamics_depth must be positive so dynamics remains action-conditioned.")
     if not (0.0 <= config.data.val_fraction < 1.0):
@@ -440,6 +479,8 @@ def validate_train_config(config: TrainConfig) -> None:
         )
     if config.optim.register_lr_scale <= 0:
         raise ValueError("optim.register_lr_scale must be positive.")
+    if config.optim.temporal_lr_scale <= 0:
+        raise ValueError("optim.temporal_lr_scale must be positive.")
     if config.model.predict_state_vector and config.data.state_key is None:
         raise ValueError("predict_state_vector requires data.state_key.")
     if config.loss.next_state_vector_weight > 0 and not config.model.predict_state_vector:

@@ -178,6 +178,12 @@ def load_training_checkpoint(
                 "use_cross_frame_tokens": False,
                 "cross_frame_count": 4,
                 "cross_frame_layers": 2,
+                "use_temporal_transformer": False,
+                "temporal_transformer_count": 4,
+                "temporal_transformer_layers": 6,
+                "temporal_transformer_heads": 4,
+                "temporal_transformer_dim": 192,
+                "temporal_transformer_mlp_ratio": 2.0,
             }
             if any(key not in saved["model"] for key in model_defaults):
                 saved = dict(saved)
