@@ -442,9 +442,14 @@ class LeRobotWorldCriticDataset(Dataset):
             history_rows = [max(row_start, start - offset) for offset in self.config.history_offsets]
             history_samples = [self.dataset[int(row)] for row in history_rows]
             if self.config.history_mosaic:
+                mosaic_offsets = (
+                    self.config.mosaic_history_offsets or self.config.history_offsets
+                )
+                mosaic_rows = [max(row_start, start - offset) for offset in mosaic_offsets]
+                mosaic_samples = [self.dataset[int(row)] for row in mosaic_rows]
                 current_images = [
                     [
-                        _make_temporal_mosaic([sample[key] for sample in history_samples])
+                        _make_temporal_mosaic([sample[key] for sample in mosaic_samples])
                         for key in self.config.image_keys
                     ]
                 ]

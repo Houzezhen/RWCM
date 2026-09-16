@@ -213,6 +213,7 @@ def load_training_checkpoint(
                     saved["model"].setdefault(key, default)
             data_defaults = {
                 "history_offsets": None,
+                "mosaic_history_offsets": None,
                 "history_mosaic": False,
                 "history_frames": False,
                 "success_key": None,
@@ -252,6 +253,7 @@ def load_training_checkpoint(
                 ("data", "success_key"),
                 ("data", "history_size"),
                 ("data", "history_offsets"),
+                ("data", "mosaic_history_offsets"),
                 ("data", "history_mosaic"),
                 ("data", "history_frames"),
                 ("data", "prediction_horizon"),

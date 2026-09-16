@@ -5,7 +5,7 @@ import argparse
 
 import torch
 
-from world_critic.config import load_config, validate_train_config
+from world_critic.config import apply_runtime_overrides, load_config, validate_train_config
 from world_critic.model import WorldCriticModel
 from world_critic.training import autocast_context, configure_training_stage, create_optimizer
 
@@ -19,7 +19,7 @@ def run() -> None:
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA is unavailable.")
 
-    config = load_config(args.config)
+    config = apply_runtime_overrides(load_config(args.config))
     validate_train_config(config)
     config.model.action_dim = 7
     model = WorldCriticModel(config.model).to(device).train()

@@ -15,12 +15,12 @@ from world_critic.model import (
 
 
 class TemporalInputTest(unittest.TestCase):
-    def spacetime_encoder(self, temporal_enabled: bool = True):
+    def spacetime_encoder(self, temporal_enabled: bool = True, frame_count: int = 4):
         return SpaceTimePerceiverEncoder(
             ModelConfig(
                 latent_dim=16,
                 max_views=2,
-                spacetime_frame_count=4,
+                spacetime_frame_count=frame_count,
                 spacetime_layers=2,
                 spacetime_heads=4,
                 perceiver_queries=64,
@@ -48,6 +48,16 @@ class TemporalInputTest(unittest.TestCase):
         pooled.square().mean().backward()
 
         self.assertGreater(float(frame_tokens.grad[:, -1].abs().sum()), 0.0)
+
+    def test_spacetime_perceiver_accepts_variable_history_up_to_configured_max(self):
+        encoder = self.spacetime_encoder(frame_count=8).eval()
+
+        for frames in (4, 8):
+            visual_tokens, pooled = encoder(torch.randn(2, frames, 2, 9, 16))
+            self.assertEqual(tuple(visual_tokens.shape), (2, 64, 16))
+            self.assertEqual(tuple(pooled.shape), (2, 1, 16))
+        with self.assertRaisesRegex(ValueError, "1..8"):
+            encoder(torch.randn(2, 9, 2, 9, 16))
 
     def test_spacetime_gate_is_bounded(self):
         encoder = self.spacetime_encoder()

@@ -1,6 +1,6 @@
 # Stage 1: linearly open teacher gate while training temporal/Perceiver layers.
-output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_vit_gate_s3072
-init_from: /media/Data/user/WCM_outputs/wcm_spacetime_vit_align_s3072/deploy.pt
+output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_vit_t8_gate_s3072
+init_from: /media/Data/user/WCM_outputs/wcm_spacetime_vit_t8_align_s3072/deploy.pt
 teacher_checkpoint: /media/Data/user/WCM_outputs/wcm_sparse4_image_b4_exp_s3072/deploy.pt
 seed: 3072
 epochs: 5
@@ -32,7 +32,8 @@ data:
   return_key: return
   success_key: episode_success
   history_size: 1
-  history_offsets: [0, 20, 40, 60]
+  history_offsets: [0, 9, 17, 26, 34, 43, 51, 60]
+  mosaic_history_offsets: [0, 20, 40, 60]
   history_mosaic: true
   history_frames: true
   prediction_horizon: 1
@@ -51,7 +52,7 @@ model:
   dynamics_depth: 3
   action_hidden_dim: 384
   use_spacetime_perceiver: true
-  spacetime_frame_count: 4
+  spacetime_frame_count: 8
   spacetime_layers: 2
   spacetime_heads: 8
   perceiver_queries: 64

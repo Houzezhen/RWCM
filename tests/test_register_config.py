@@ -1,6 +1,12 @@
 import unittest
+from unittest.mock import patch
 
-from world_critic.config import DataConfig, TrainConfig, validate_train_config
+from world_critic.config import (
+    DataConfig,
+    TrainConfig,
+    apply_runtime_overrides,
+    validate_train_config,
+)
 from world_critic.training import config_from_checkpoint_payload
 
 
@@ -139,6 +145,34 @@ class RegisterConfigValidationTest(unittest.TestCase):
         config.model.spacetime_teacher_enabled = False
         with self.assertRaisesRegex(ValueError, "history_mosaic must be false"):
             validate_train_config(config)
+
+    def test_spacetime_teacher_mosaic_offsets_are_independent_of_video_history(self):
+        config = self.config()
+        config.data.history_size = 1
+        config.data.history_offsets = [0, 9, 17, 26, 34, 43, 51, 60]
+        config.data.mosaic_history_offsets = [0, 20, 40, 60]
+        config.data.history_mosaic = True
+        config.data.history_frames = True
+        config.model.use_spacetime_perceiver = True
+        config.model.spacetime_frame_count = 8
+        config.model.spacetime_teacher_enabled = True
+        config.teacher_checkpoint = "teacher.pt"
+
+        validate_train_config(config)
+
+    def test_runtime_override_selects_video_history_length(self):
+        config = self.config()
+        with patch.dict(
+            "os.environ",
+            {
+                "WCM_HISTORY_OFFSETS": "0,4,8,12,16,20,24,28",
+                "WCM_SPACETIME_FRAME_COUNT": "8",
+            },
+        ):
+            apply_runtime_overrides(config)
+
+        self.assertEqual(config.data.history_offsets, [0, 4, 8, 12, 16, 20, 24, 28])
+        self.assertEqual(config.model.spacetime_frame_count, 8)
 
 
 if __name__ == "__main__":

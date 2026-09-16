@@ -1,6 +1,6 @@
 # Stage 2: teacher-free gate=1; unfreeze top four ViT layers and WCM heads.
-output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_vit_joint_s3072
-init_from: /media/Data/user/WCM_outputs/wcm_spacetime_vit_gate_s3072/deploy.pt
+output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_vit_t8_joint_s3072
+init_from: /media/Data/user/WCM_outputs/wcm_spacetime_vit_t8_gate_s3072/deploy.pt
 seed: 3072
 epochs: 5
 per_device_batch_size: 2
@@ -30,7 +30,7 @@ data:
   return_key: return
   success_key: episode_success
   history_size: 1
-  history_offsets: [0, 20, 40, 60]
+  history_offsets: [0, 9, 17, 26, 34, 43, 51, 60]
   history_mosaic: false
   history_frames: true
   prediction_horizon: 1
@@ -49,7 +49,7 @@ model:
   dynamics_depth: 3
   action_hidden_dim: 384
   use_spacetime_perceiver: true
-  spacetime_frame_count: 4
+  spacetime_frame_count: 8
   spacetime_layers: 2
   spacetime_heads: 8
   perceiver_queries: 64

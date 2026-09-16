@@ -26,6 +26,9 @@ class DataConfig:
     # offsets are ordered [0, older, ...] in frame-index units and the regular
     # contiguous history window is reduced to one current endpoint.
     history_offsets: list[int] | None = None
+    # Optional four-frame sampling used only to reconstruct an existing mosaic
+    # teacher input. This is independent of the student's raw-video history.
+    mosaic_history_offsets: list[int] | None = None
     history_mosaic: bool = False
     history_frames: bool = False
     prediction_horizon: int = 1
@@ -125,6 +128,8 @@ class ModelConfig:
     # Raw history frames are encoded by the shared image ViT, mixed along time,
     # then compressed to a fixed visual-token budget by a Perceiver reducer.
     use_spacetime_perceiver: bool = False
+    # Maximum raw video frames accepted by one checkpoint. Training normally
+    # uses exactly len(data.history_offsets); inference may use any shorter T.
     spacetime_frame_count: int = 4
     spacetime_layers: int = 2
     spacetime_heads: int = 8
@@ -316,6 +321,20 @@ def apply_runtime_overrides(config: TrainConfig) -> TrainConfig:
         except ValueError as exc:
             raise ValueError(f"Environment variable {name} must be an integer, got {raw!r}.") from exc
 
+    def integer_list(name: str) -> list[int] | None:
+        raw = value(name)
+        if raw is None:
+            return None
+        try:
+            result = [int(item.strip()) for item in raw.split(",") if item.strip()]
+        except ValueError as exc:
+            raise ValueError(
+                f"Environment variable {name} must be comma-separated integers, got {raw!r}."
+            ) from exc
+        if not result:
+            raise ValueError(f"Environment variable {name} cannot be empty.")
+        return result
+
     repo_id = value("WCM_DATASET_REPO_ID")
     root = value("WCM_DATASET_ROOT")
     revision = value("WCM_DATASET_REVISION")
@@ -332,6 +351,8 @@ def apply_runtime_overrides(config: TrainConfig) -> TrainConfig:
     teacher_checkpoint = value("WCM_TEACHER_CHECKPOINT")
     resume = value("WCM_RESUME")
     precision = value("WCM_PRECISION")
+    history_offsets = integer_list("WCM_HISTORY_OFFSETS")
+    spacetime_frame_count = integer("WCM_SPACETIME_FRAME_COUNT")
 
     if repo_id is not None:
         config.data.repo_id = repo_id
@@ -365,6 +386,10 @@ def apply_runtime_overrides(config: TrainConfig) -> TrainConfig:
         config.resume = resume
     if precision is not None:
         config.precision = precision
+    if history_offsets is not None:
+        config.data.history_offsets = history_offsets
+    if spacetime_frame_count is not None:
+        config.model.spacetime_frame_count = spacetime_frame_count
     return config
 
 
@@ -397,8 +422,20 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError("data.history_offsets must be sorted and contain no duplicates.")
         if config.data.history_size != 1:
             raise ValueError("data.history_size must be 1 when data.history_offsets is configured.")
-        if config.data.history_mosaic and len(offsets) != 4:
-            raise ValueError("data.history_mosaic requires exactly four history_offsets.")
+        mosaic_offsets = config.data.mosaic_history_offsets or offsets
+        if config.data.history_mosaic:
+            if len(mosaic_offsets) != 4:
+                raise ValueError(
+                    "data.history_mosaic requires exactly four mosaic_history_offsets."
+                )
+            if mosaic_offsets[0] != 0:
+                raise ValueError("data.mosaic_history_offsets must start with 0.")
+            if any(offset < 0 for offset in mosaic_offsets):
+                raise ValueError("data.mosaic_history_offsets cannot contain negative offsets.")
+            if mosaic_offsets != sorted(set(mosaic_offsets)):
+                raise ValueError(
+                    "data.mosaic_history_offsets must be sorted and contain no duplicates."
+                )
         if (
             config.data.history_mosaic
             and config.data.history_frames
@@ -409,6 +446,8 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("data.history_mosaic requires data.history_offsets.")
     elif config.data.history_frames:
         raise ValueError("data.history_frames requires data.history_offsets.")
+    if config.data.mosaic_history_offsets is not None and not config.data.history_mosaic:
+        raise ValueError("data.mosaic_history_offsets requires history_mosaic=true.")
     if config.epochs < 1:
         raise ValueError("epochs must be positive.")
     if config.num_workers < 0:

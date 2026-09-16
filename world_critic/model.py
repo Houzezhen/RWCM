@@ -851,9 +851,11 @@ class SpaceTimePerceiverEncoder(nn.Module):
     def __init__(self, config: ModelConfig) -> None:
         super().__init__()
         dim = config.latent_dim
-        self.frame_count = config.spacetime_frame_count
+        self.max_frame_count = config.spacetime_frame_count
         self.temporal_enabled = config.spacetime_temporal_enabled
-        self.time_embedding = nn.Parameter(torch.zeros(1, self.frame_count, 1, 1, dim))
+        self.time_embedding = nn.Parameter(
+            torch.zeros(1, self.max_frame_count, 1, 1, dim)
+        )
         self.camera_embedding = nn.Parameter(torch.zeros(1, 1, config.max_views, 1, dim))
         self.temporal_layers = nn.ModuleList(
             nn.TransformerEncoderLayer(
@@ -898,8 +900,10 @@ class SpaceTimePerceiverEncoder(nn.Module):
                 f"SpaceTime frame tokens must be [B,T,V,P,D], got {frame_tokens.shape}"
             )
         batch, frames, views, patches, dim = frame_tokens.shape
-        if frames != self.frame_count:
-            raise ValueError(f"Expected {self.frame_count} history frames, got {frames}.")
+        if not 1 <= frames <= self.max_frame_count:
+            raise ValueError(
+                f"Expected 1..{self.max_frame_count} history frames, got {frames}."
+            )
         if views > self.camera_embedding.size(2):
             raise ValueError(
                 f"SpaceTime encoder has {self.camera_embedding.size(2)} camera slots, got {views}."
@@ -907,7 +911,11 @@ class SpaceTimePerceiverEncoder(nn.Module):
         # Dataset order is current to oldest. All remaining operations use
         # chronological order so the final temporal position is current.
         tokens = frame_tokens.flip(1)
-        tokens = tokens + self.time_embedding + self.camera_embedding[:, :, :views]
+        tokens = (
+            tokens
+            + self.time_embedding[:, self.max_frame_count - frames :]
+            + self.camera_embedding[:, :, :views]
+        )
         if self.temporal_enabled:
             temporal = tokens.permute(0, 2, 3, 1, 4).reshape(
                 batch * views * patches, frames, dim
