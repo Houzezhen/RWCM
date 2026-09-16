@@ -224,6 +224,9 @@ class TrainConfig:
     early_stop_metric: str | None = None
     early_stop_threshold: float | None = None
     early_stop_mode: str = "max"
+    alignment_plateau_patience_steps: int = 0
+    alignment_plateau_min_delta: float = 1.0e-4
+    alignment_plateau_ema_decay: float = 0.99
     unfreeze_vision_top_layers: int = 4
     selection_metric: str = "value_mse"
     selection_mode: str = "min"
@@ -606,6 +609,19 @@ def validate_train_config(config: TrainConfig) -> None:
         )
     if config.early_stop_mode not in {"min", "max"}:
         raise ValueError("early_stop_mode must be 'min' or 'max'.")
+    if config.alignment_plateau_patience_steps < 0:
+        raise ValueError("alignment_plateau_patience_steps cannot be negative.")
+    if config.alignment_plateau_min_delta < 0:
+        raise ValueError("alignment_plateau_min_delta cannot be negative.")
+    if not 0.0 <= config.alignment_plateau_ema_decay < 1.0:
+        raise ValueError("alignment_plateau_ema_decay must be in [0,1).")
+    if (
+        config.alignment_plateau_patience_steps > 0
+        and config.training_stage != "spacetime_align"
+    ):
+        raise ValueError(
+            "alignment_plateau_patience_steps is only supported for spacetime_align."
+        )
     if config.unfreeze_vision_top_layers < 0:
         raise ValueError("unfreeze_vision_top_layers cannot be negative.")
     if config.selection_mode not in {"min", "max"}:

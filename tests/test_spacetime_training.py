@@ -5,6 +5,7 @@ from torch import nn
 
 from world_critic.config import DataConfig, TrainConfig
 from world_critic.training import (
+    AlignmentPlateauMonitor,
     configure_training_stage,
     scheduled_alignment_weight,
     update_spacetime_gate,
@@ -110,6 +111,27 @@ class SpaceTimeTrainingTest(unittest.TestCase):
         self.assertFalse(model.view_pool_query.requires_grad)
         self.assertFalse(model.view_attention.in_proj_weight.requires_grad)
         self.assertTrue(model.vision_encoder.layers[0].weight.requires_grad)
+
+    def test_alignment_plateau_stops_at_patience_boundary(self):
+        monitor = AlignmentPlateauMonitor(
+            patience_steps=4000, min_delta=1.0e-4, ema_decay=0.0
+        )
+
+        self.assertFalse(monitor.update(0.5, 1))
+        self.assertFalse(monitor.update(0.50005, 4000))
+        self.assertTrue(monitor.update(0.50005, 4001))
+        self.assertEqual(monitor.steps_since_improvement, 4000)
+
+    def test_alignment_plateau_meaningful_improvement_resets_patience(self):
+        monitor = AlignmentPlateauMonitor(
+            patience_steps=4000, min_delta=1.0e-4, ema_decay=0.0
+        )
+
+        monitor.update(0.5, 1)
+        self.assertFalse(monitor.update(0.5002, 4000))
+        self.assertEqual(monitor.last_improvement_step, 4000)
+        self.assertFalse(monitor.update(0.5002, 7999))
+        self.assertTrue(monitor.update(0.5002, 8000))
 
 
 if __name__ == "__main__":

@@ -544,7 +544,7 @@ Mosaic 只用于证明并教授“历史视觉有效”，不是最终模型输�
 
 ### 13.2 四阶段训练
 
-1. `spacetime_align`（最多 5 轮）：加载已有 Image-B4 的语言融合/context/value/dynamics 等同形权重，旧 ViT backbone 不加载到 SigLIP；冻结 Image-B4 visual teacher、student SigLIP/WCM 和时空层，只训练 Perceiver 与输出 projection。teacher 使用与原训练完全相同的四帧 mosaic 输入；`A=mean(camera visual tokens)`，`B=mean(64 Perceiver tokens)`，两侧使用相同的无参数 mean pooling。gate=0，优化 cosine + normalized MSE；validation cosine 达到 `0.9` 立即提前停止并从 best checkpoint 导出。
+1. `spacetime_align`（最多 5 轮）：加载已有 Image-B4 的语言融合/context/value/dynamics 等同形权重，旧 ViT backbone 不加载到 SigLIP；冻结 Image-B4 visual teacher、student SigLIP/WCM 和时空层，只训练 Perceiver 与输出 projection。teacher 使用与原训练完全相同的四帧 mosaic 输入；`A=mean(camera visual tokens)`，`B=mean(64 Perceiver tokens)`，两侧使用相同的无参数 mean pooling。gate=0，优化 cosine + normalized MSE。validation cosine 达到 `0.9` 时立即停止；否则监控训练 cosine 的 EMA（decay `0.99`），连续 4000 个 optimizer step 未出现至少 `1e-4` 的提升就停止。两种停止路径都会完成当次验证、保存 best checkpoint 并从 best 导出。
 2. `spacetime_gate`（5 轮）：只训练时空层和 Perceiver，gate 按 optimizer step 从 0 线性升到 1，alignment weight 同步从 `0.2` 线性衰减到 0；最后一步 gate=1/weight=0 时不再执行 teacher，随后 teacher 永久退出。
 3. `spacetime_joint`（5 轮）：关闭 mosaic teacher，gate 固定 1；解冻 SigLIP 最后 4 层、视觉 projection、language fusion/context trunk 与 value/risk/Q heads。
 4. `spacetime_full`（3 轮）：仍为 teacher-free/gate=1，以 `2e-6` 全量微调 SigLIP 与 WCM（CLIP 文本塔按既有协议继续冻结）。每阶段从验证集 best checkpoint 导出 `deploy.pt`，不再导出末轮权重。

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import torch
@@ -18,6 +19,37 @@ from .curves import build_episode_curves
 from .distributed import DistributedContext, all_reduce_sum, gather_objects
 from .metrics import RegressionMetrics, ddp_global_mean_loss, masked_squared_error
 from .model import SIGReg, WorldCriticModel, normalized_random_projections
+
+
+@dataclass
+class AlignmentPlateauMonitor:
+    patience_steps: int
+    min_delta: float
+    ema_decay: float
+    ema: float | None = None
+    best_ema: float = -math.inf
+    last_improvement_step: int | None = None
+    current_step: int = 0
+
+    def update(self, cosine: float, global_step: int) -> bool:
+        if not math.isfinite(cosine):
+            raise FloatingPointError(f"Alignment cosine is non-finite: {cosine}")
+        self.current_step = global_step
+        self.ema = (
+            cosine
+            if self.ema is None
+            else self.ema_decay * self.ema + (1.0 - self.ema_decay) * cosine
+        )
+        if self.last_improvement_step is None or self.ema >= self.best_ema + self.min_delta:
+            self.best_ema = self.ema
+            self.last_improvement_step = global_step
+        return global_step - self.last_improvement_step >= self.patience_steps
+
+    @property
+    def steps_since_improvement(self) -> int:
+        if self.last_improvement_step is None:
+            return 0
+        return self.current_step - self.last_improvement_step
 
 
 def seed_everything(seed: int, deterministic: bool = False) -> None:
@@ -430,6 +462,7 @@ def compute_losses(
 
     alignment_loss = output.context_latent.new_zeros(())
     alignment_metric = output.context_latent.new_zeros((), dtype=torch.float64)
+    alignment_cosine_metric = output.context_latent.new_zeros((), dtype=torch.float64)
     effective_alignment_weight = (
         loss_config.alignment_weight if alignment_weight is None else alignment_weight
     )
@@ -438,11 +471,12 @@ def compute_losses(
             raise ValueError("Alignment loss requires student and teacher visual latents.")
         student = output.alignment_student.float()
         teacher = output.alignment_teacher.detach().float()
-        cosine = 1.0 - F.cosine_similarity(student, teacher, dim=-1)
+        cosine_similarity = F.cosine_similarity(student, teacher, dim=-1)
+        cosine_distance = 1.0 - cosine_similarity
         student_norm = F.layer_norm(student, (student.size(-1),))
         teacher_norm = F.layer_norm(teacher, (teacher.size(-1),))
         normalized_mse = (student_norm - teacher_norm).square().mean(dim=-1)
-        alignment_values = cosine + loss_config.alignment_mse_weight * normalized_mse
+        alignment_values = cosine_distance + loss_config.alignment_mse_weight * normalized_mse
         alignment_sum = alignment_values.sum()
         alignment_count = torch.tensor(
             alignment_values.numel(), device=alignment_values.device, dtype=torch.float64
@@ -453,6 +487,11 @@ def compute_losses(
         global_alignment_sum = alignment_sum.detach().double()
         all_reduce_sum(global_alignment_sum, ctx)
         alignment_metric = global_alignment_sum / global_alignment_count.clamp_min(1)
+        global_alignment_cosine_sum = cosine_similarity.detach().double().sum()
+        all_reduce_sum(global_alignment_cosine_sum, ctx)
+        alignment_cosine_metric = (
+            global_alignment_cosine_sum / global_alignment_count.clamp_min(1)
+        )
 
     risk_loss = output.context_latent.new_zeros(())
     risk_metric = output.context_latent.new_zeros((), dtype=torch.float64)
@@ -509,6 +548,7 @@ def compute_losses(
         "next_state_vector_loss": vector_metric,
         "sigreg_loss": sigreg_loss.detach(),
         "alignment_loss": alignment_metric,
+        "alignment_cosine": alignment_cosine_metric,
         "alignment_weight": output.context_latent.new_tensor(effective_alignment_weight),
         "risk_loss": risk_metric,
         "q_loss": q_metric,

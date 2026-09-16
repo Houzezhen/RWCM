@@ -46,6 +46,7 @@ from .distributed import (
 )
 from .model import FrozenVisualTeacher, SIGReg
 from .training import (
+    AlignmentPlateauMonitor,
     autocast_context,
     build_model,
     configure_training_stage,
@@ -484,8 +485,16 @@ def run() -> None:
             1,
             math.ceil(len(train_loader) / config.gradient_accumulation_steps) * config.epochs,
         )
+        alignment_plateau = None
+        if config.alignment_plateau_patience_steps > 0:
+            alignment_plateau = AlignmentPlateauMonitor(
+                patience_steps=config.alignment_plateau_patience_steps,
+                min_delta=config.alignment_plateau_min_delta,
+                ema_decay=config.alignment_plateau_ema_decay,
+            )
         for epoch in range(start_epoch, config.epochs):
             stop_after_epoch = False
+            plateau_stop = False
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
             model.train()
@@ -550,6 +559,10 @@ def run() -> None:
                     scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
                     global_step += 1
+                    if alignment_plateau is not None:
+                        plateau_stop = alignment_plateau.update(
+                            float(loss_parts["alignment_cosine"]), global_step
+                        )
                     if ctx.is_main and global_step % config.log_every == 0:
                         printable = {
                             "epoch": epoch,
@@ -565,6 +578,19 @@ def run() -> None:
                         if current_gate is not None:
                             printable["spacetime_gate"] = current_gate
                         printable["alignment_weight"] = current_alignment_weight
+                        if alignment_plateau is not None:
+                            printable.update(
+                                {
+                                    "alignment_cosine": float(
+                                        loss_parts["alignment_cosine"]
+                                    ),
+                                    "alignment_cosine_ema": alignment_plateau.ema,
+                                    "best_alignment_cosine_ema": alignment_plateau.best_ema,
+                                    "alignment_steps_since_improvement": (
+                                        alignment_plateau.steps_since_improvement
+                                    ),
+                                }
+                            )
                         sparse_memory = getattr(
                             unwrap_model(model), "sparse_memory_encoder", None
                         )
@@ -598,11 +624,22 @@ def run() -> None:
                             )
                         print(json.dumps(printable))
                     if ctx.is_main:
-                        progress.set_postfix(loss=f"{float(loss_parts['loss']):.4f}", step=global_step)
+                        postfix = {
+                            "loss": f"{float(loss_parts['loss']):.4f}",
+                            "step": global_step,
+                        }
+                        if alignment_plateau is not None:
+                            postfix["cos_ema"] = f"{alignment_plateau.ema:.4f}"
+                            postfix["stale"] = alignment_plateau.steps_since_improvement
+                        progress.set_postfix(**postfix)
+                    if plateau_stop:
+                        break
 
             metrics = None
             is_best = False
-            if val_loader is not None and (epoch + 1) % config.eval_every_epochs == 0:
+            if val_loader is not None and (
+                plateau_stop or (epoch + 1) % config.eval_every_epochs == 0
+            ):
                 validation_teacher = teacher_model
                 if current_gate == 1.0 and current_alignment_weight == 0.0:
                     validation_teacher = None
@@ -708,7 +745,22 @@ def run() -> None:
                             }
                         )
                     )
-            if stop_after_epoch:
+                if plateau_stop:
+                    print(
+                        json.dumps(
+                            {
+                                "alignment_plateau_stop": True,
+                                "patience_steps": config.alignment_plateau_patience_steps,
+                                "min_delta": config.alignment_plateau_min_delta,
+                                "ema_decay": config.alignment_plateau_ema_decay,
+                                "alignment_cosine_ema": alignment_plateau.ema,
+                                "best_alignment_cosine_ema": alignment_plateau.best_ema,
+                                "global_step": global_step,
+                                "epoch": epoch,
+                            }
+                        )
+                    )
+            if stop_after_epoch or plateau_stop:
                 break
 
         if config.deploy_from_best:
