@@ -210,6 +210,8 @@ class TrainConfig:
     resume: str | None = None
     # Warm-start：仅加载模型权重（不校验 config、不恢复 optimizer/scheduler/RNG），用于换数据集微调。
     init_from: str | None = None
+    teacher_checkpoint: str | None = None
+    partial_init: bool = False
     compile: bool = False
     expected_world_size: int | None = None
     ddp_timeout_minutes: int = 30
@@ -319,6 +321,7 @@ def apply_runtime_overrides(config: TrainConfig) -> TrainConfig:
     epochs = integer("WCM_EPOCHS")
     seed = integer("WCM_SEED")
     init_from = value("WCM_INIT_FROM")
+    teacher_checkpoint = value("WCM_TEACHER_CHECKPOINT")
     resume = value("WCM_RESUME")
     precision = value("WCM_PRECISION")
 
@@ -348,6 +351,8 @@ def apply_runtime_overrides(config: TrainConfig) -> TrainConfig:
         config.seed = seed
     if init_from is not None:
         config.init_from = init_from
+    if teacher_checkpoint is not None:
+        config.teacher_checkpoint = teacher_checkpoint
     if resume is not None:
         config.resume = resume
     if precision is not None:
@@ -491,6 +496,10 @@ def validate_train_config(config: TrainConfig) -> None:
         if config.model.spacetime_teacher_enabled and not config.data.history_mosaic:
             raise ValueError(
                 "spacetime_teacher_enabled=true requires data.history_mosaic=true."
+            )
+        if config.model.spacetime_teacher_enabled and not config.teacher_checkpoint:
+            raise ValueError(
+                "spacetime_teacher_enabled=true requires teacher_checkpoint."
             )
         if not config.model.spacetime_teacher_enabled and config.data.history_mosaic:
             raise ValueError(

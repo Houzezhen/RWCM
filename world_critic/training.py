@@ -182,6 +182,27 @@ def update_spacetime_gate(
     return float(gate)
 
 
+def enforce_training_stage_modes(model: torch.nn.Module, config: TrainConfig) -> None:
+    """Keep frozen teacher-side WCM modules deterministic during warmup."""
+    if config.training_stage not in {"spacetime_align", "spacetime_gate"}:
+        return
+    raw_model = unwrap_model(model)
+    for name in (
+        "language_encoder",
+        "view_attention",
+        "language_fusion",
+        "context_trunk",
+        "value_head",
+        "dynamics",
+        "risk_head",
+        "q_action_encoder",
+        "q_head",
+    ):
+        module = getattr(raw_model, name, None)
+        if module is not None:
+            module.eval()
+
+
 def create_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim.Optimizer:
     register_lr_scale = getattr(config.optim, "register_lr_scale", 1.0)
     temporal_lr_scale = getattr(config.optim, "temporal_lr_scale", 1.0)
@@ -490,6 +511,7 @@ def evaluate_loader(
     max_batches: int | None = None,
     collect_episode_curves: bool = False,
     log_every_batches: int | None = None,
+    teacher_model: torch.nn.Module | None = None,
 ) -> dict[str, Any]:
     """Evaluate online (one endpoint per window) and token-level metrics.
 
@@ -564,6 +586,10 @@ def evaluate_loader(
                 )
             forward_started = time.monotonic()
             batch = move_batch_to_device(batch, ctx.device)
+            teacher_current_state = None
+            if teacher_model is not None:
+                with autocast_context(ctx.device, config.precision):
+                    teacher_current_state = teacher_model(batch["images"][:, :1])
             with autocast_context(ctx.device, config.precision):
                 output = unwrap_model(model)(
                     images=batch["images"],
@@ -573,6 +599,7 @@ def evaluate_loader(
                     valid_mask=batch["valid_mask"],
                     state_vectors=batch.get("state_vectors"),
                     history_images=batch.get("history_images"),
+                    teacher_current_state=teacher_current_state,
                 )
             return_target = canonicalize_return_target(batch["return_targets"])
             valid = output.valid_mask.bool()

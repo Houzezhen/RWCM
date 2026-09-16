@@ -1,6 +1,8 @@
 # Stage 0: frozen mosaic teacher/SigLIP/WCM; train Perceiver projection only.
 output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_align_s3072
-init_from: /media/Data/user/WCM_outputs/wcm_siglip_mosaic_s3072/deploy.pt
+init_from: /media/Data/user/WCM_outputs/wcm_sparse4_image_b4_exp_s3072/deploy.pt
+teacher_checkpoint: /media/Data/user/WCM_outputs/wcm_sparse4_image_b4_exp_s3072/deploy.pt
+partial_init: true
 seed: 3072
 epochs: 5
 per_device_batch_size: 2

@@ -132,6 +132,7 @@ class RegisterConfigValidationTest(unittest.TestCase):
         config.model.vision.model_name = "google/siglip-base-patch16-224"
         config.model.use_spacetime_perceiver = True
         config.model.spacetime_teacher_enabled = True
+        config.teacher_checkpoint = "teacher.pt"
         config.model.predict_risk = True
         validate_train_config(config)
 

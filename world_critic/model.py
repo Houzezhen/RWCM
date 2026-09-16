@@ -385,7 +385,9 @@ class VisionEncoder(nn.Module):
 
     def train(self, mode: bool = True):
         super().train(mode)
-        if not self.trainable:
+        if not self.trainable or not any(
+            parameter.requires_grad for parameter in self.backbone.parameters()
+        ):
             self.backbone.eval()
         return self
 
@@ -655,6 +657,29 @@ class VisionEncoder(nn.Module):
         batch, time, views = tokens.shape[:3]
         frame_latent = tokens[:, :, :, 0] if self.has_cls_token else tokens.mean(dim=3)
         return frame_latent + self.camera_embedding[:, :, :views]
+
+
+class FrozenVisualTeacher(nn.Module):
+    """Minimal visual subset of a trained WCM used for latent distillation."""
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        self.vision_encoder = VisionEncoder(config)
+        self.view_pool_query = nn.Parameter(torch.zeros(1, 1, config.latent_dim))
+        self.view_attention = nn.MultiheadAttention(
+            config.latent_dim,
+            config.trunk_heads,
+            dropout=config.dropout,
+            batch_first=True,
+        )
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        view_latents = self.vision_encoder(images)
+        batch, time, views, dim = view_latents.shape
+        values = view_latents.reshape(batch * time, views, dim)
+        query = self.view_pool_query.expand(batch * time, 1, dim)
+        pooled, _ = self.view_attention(query, values, values, need_weights=False)
+        return pooled.reshape(batch, time, dim)
 
 
 class CrossFrameQueryLayer(nn.Module):
@@ -1470,6 +1495,7 @@ class WorldCriticModel(nn.Module):
         valid_mask: torch.Tensor | None = None,
         state_vectors: torch.Tensor | None = None,
         history_images: torch.Tensor | None = None,
+        teacher_current_state: torch.Tensor | None = None,
     ) -> WorldCriticOutput:
         if images.ndim not in (5, 6):
             raise ValueError(f"Expected images [B,T,C,H,W] or [B,T,V,C,H,W], got {images.shape}")
@@ -1521,13 +1547,21 @@ class WorldCriticModel(nn.Module):
             _, student_current = self.spacetime_encoder(history_tokens)
             gate = float(self.spacetime_encoder.blend_gate)
             if self.config.spacetime_teacher_enabled:
-                view_latents = self.vision_encoder(images)
-                teacher_states = self.pool_views(view_latents)
-                teacher_current = teacher_states[:, :1]
+                if teacher_current_state is None:
+                    raise ValueError(
+                        "Teacher-enabled SpaceTime forward requires teacher_current_state."
+                    )
+                if teacher_current_state.shape != student_current.shape:
+                    raise ValueError(
+                        "Teacher current state shape differs from SpaceTime student: "
+                        f"{teacher_current_state.shape} vs {student_current.shape}."
+                    )
+                teacher_current = teacher_current_state.detach()
                 current_state = self.spacetime_encoder.blend(
                     teacher_current, student_current
                 )
-                state_latents = torch.cat([current_state, teacher_states[:, 1:]], dim=1)
+                next_state = self.pool_views(self.vision_encoder(images[:, 1:]))
+                state_latents = torch.cat([current_state, next_state], dim=1)
             else:
                 if gate != 1.0:
                     raise ValueError(

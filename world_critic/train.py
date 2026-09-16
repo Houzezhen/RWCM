@@ -44,14 +44,16 @@ from .distributed import (
     cleanup_distributed,
     initialize_distributed,
 )
-from .model import SIGReg
+from .model import FrozenVisualTeacher, SIGReg
 from .training import (
     autocast_context,
     build_model,
     configure_training_stage,
+    config_from_checkpoint_payload,
     compute_losses,
     create_optimizer,
     create_scheduler,
+    enforce_training_stage_modes,
     evaluate_loader,
     move_batch_to_device,
     seed_everything,
@@ -313,6 +315,7 @@ def run() -> None:
         assert train_loader is not None
 
         model = None
+        teacher_model = None
         stage_info = None
 
         def prepare_model() -> None:
@@ -324,6 +327,26 @@ def run() -> None:
 
         collectively_validate(ctx, "Model construction/compilation", prepare_model)
         assert model is not None
+
+        if config.teacher_checkpoint:
+            teacher_payload = load_checkpoint_payload(config.teacher_checkpoint, ctx)
+            teacher_config = config_from_checkpoint_payload(teacher_payload)
+
+            def prepare_teacher() -> None:
+                nonlocal teacher_model
+                teacher_model = FrozenVisualTeacher(teacher_config.model).to(ctx.device)
+                prefixes = ("vision_encoder.", "view_pool_query", "view_attention.")
+                teacher_state = {
+                    key: value
+                    for key, value in teacher_payload["model"].items()
+                    if key.startswith(prefixes)
+                }
+                teacher_model.load_state_dict(teacher_state, strict=True)
+                teacher_model.requires_grad_(False).eval()
+
+            collectively_validate(ctx, "Frozen mosaic teacher preparation", prepare_teacher)
+            if ctx.is_main:
+                print(json.dumps({"teacher_checkpoint": config.teacher_checkpoint}))
         model = wrap_ddp(model, ctx)
         trainable_parameters = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
         total_parameters = sum(parameter.numel() for parameter in model.parameters())
@@ -358,9 +381,51 @@ def run() -> None:
         best_metric = math.inf if config.selection_mode == "min" else -math.inf
         if config.init_from:
             payload = load_checkpoint_payload(config.init_from, ctx)
-            missing, unexpected = unwrap_model(model).load_state_dict(
-                payload["model"], strict=False
-            )
+            if config.partial_init:
+                target_state = unwrap_model(model).state_dict()
+                selected = {
+                    key: value
+                    for key, value in payload["model"].items()
+                    if key in target_state
+                    and target_state[key].shape == value.shape
+                    and not key.startswith("vision_encoder.backbone.")
+                }
+                required_prefixes = (
+                    "vision_encoder.projection.",
+                    "view_attention.",
+                    "language_fusion.",
+                    "context_trunk.",
+                    "value_head.",
+                    "dynamics.",
+                )
+                absent = [
+                    prefix
+                    for prefix in required_prefixes
+                    if not any(key.startswith(prefix) for key in selected)
+                ]
+                if absent:
+                    raise RuntimeError(
+                        f"Partial init checkpoint lacks compatible WCM groups: {absent}"
+                    )
+                missing, unexpected = unwrap_model(model).load_state_dict(
+                    selected, strict=False
+                )
+                if unexpected:
+                    raise RuntimeError(f"Partial init produced unexpected keys: {unexpected}")
+                if ctx.is_main:
+                    print(
+                        json.dumps(
+                            {
+                                "partial_init": config.init_from,
+                                "loaded_keys": len(selected),
+                                "missing_keys": len(missing),
+                            }
+                        )
+                    )
+            else:
+                missing, unexpected = unwrap_model(model).load_state_dict(
+                    payload["model"], strict=False
+                )
             allowed_missing = {
                 key
                 for key in missing
@@ -381,7 +446,9 @@ def run() -> None:
                 for key in unexpected
                 if key.startswith(("cross_frame_encoder.", "temporal_adapter."))
             }
-            if set(missing) != allowed_missing or set(unexpected) != allowed_unexpected:
+            if not config.partial_init and (
+                set(missing) != allowed_missing or set(unexpected) != allowed_unexpected
+            ):
                 raise RuntimeError(
                     "Warm-start checkpoint is incompatible: "
                     f"missing={sorted(set(missing) - allowed_missing)}, "
@@ -420,6 +487,7 @@ def run() -> None:
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
             model.train()
+            enforce_training_stage_modes(model, config)
             epoch_started = time.monotonic()
             progress = tqdm(
                 train_loader,
@@ -432,6 +500,10 @@ def run() -> None:
                     model, config, global_step, total_training_steps
                 )
                 batch = move_batch_to_device(batch, ctx.device)
+                teacher_current_state = None
+                if teacher_model is not None:
+                    with torch.no_grad(), autocast_context(ctx.device, config.precision):
+                        teacher_current_state = teacher_model(batch["images"][:, :1])
                 accumulation_index = batch_index % config.gradient_accumulation_steps
                 sync_step = (
                     accumulation_index == config.gradient_accumulation_steps - 1
@@ -448,6 +520,7 @@ def run() -> None:
                             valid_mask=batch["valid_mask"],
                             state_vectors=batch.get("state_vectors"),
                             history_images=batch.get("history_images"),
+                            teacher_current_state=teacher_current_state,
                         )
                         loss, loss_parts = compute_losses(
                             output,
@@ -521,7 +594,9 @@ def run() -> None:
             metrics = None
             is_best = False
             if val_loader is not None and (epoch + 1) % config.eval_every_epochs == 0:
-                metrics = evaluate_loader(model, val_loader, config, ctx)
+                metrics = evaluate_loader(
+                    model, val_loader, config, ctx, teacher_model=teacher_model
+                )
                 def validate_validation_metrics() -> None:
                     if metrics is None or not math.isfinite(metrics["value_mse"]):
                         raise FloatingPointError(f"Validation MSE is non-finite: {metrics}")

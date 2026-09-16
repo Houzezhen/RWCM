@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Train single/mosaic SigLIP controls and the four-stage SpaceTime Perceiver-64.
+# Reuse the trained Image-B4 teacher and train SpaceTime SigLIP Perceiver-64.
 set -euo pipefail
 cd "$(dirname -- "${BASH_SOURCE[0]}")"
 
@@ -20,7 +20,7 @@ echo "== 0/5 tests and teacher-free CUDA smoke =="
   --config configs/wcm_spacetime_joint.yaml --device cuda
 
 train_run() {
-  local config=$1 seed=$2 output=$3 init_from=${4:-}
+  local config=$1 seed=$2 output=$3 init_from=${4:-} teacher=${5:-}
   local epochs
   epochs=$(awk '/^epochs:/ {print $2; exit}' "$config")
   if [[ -f "$output/deploy.pt" && -f "$output/metrics.jsonl" ]] \
@@ -32,9 +32,13 @@ train_run() {
     echo "[abort] partial or incompatible output exists: $output"
     exit 1
   fi
+  if [[ -n "$teacher" ]]; then
+    [[ -f "$teacher" ]] || { echo "[abort] missing teacher checkpoint: $teacher"; exit 1; }
+  fi
   if [[ -n "$init_from" ]]; then
     [[ -f "$init_from" ]] || { echo "[abort] missing init checkpoint: $init_from"; exit 1; }
     env WCM_SEED="$seed" WCM_OUTPUT_DIR="$output" WCM_INIT_FROM="$init_from" \
+      WCM_TEACHER_CHECKPOINT="$teacher" \
       "$PYTHON" -u -m world_critic.train --config "$config" \
       2>&1 | tee "outputs/batch_logs/$(basename "$output").log"
   else
@@ -44,20 +48,21 @@ train_run() {
   fi
 }
 
-echo "== 1/5 train matched SigLIP controls =="
+echo "== 1/5 train single-frame SigLIP control; reuse existing Image-B4 mosaic =="
 for SEED in 3072 42; do
   train_run configs/wcm_siglip_single.yaml "$SEED" "$BASE/wcm_siglip_single_s$SEED"
-  train_run configs/wcm_siglip_mosaic.yaml "$SEED" "$BASE/wcm_siglip_mosaic_s$SEED"
 done
 
 echo "== 2/5 run four-stage SpaceTime Perceiver training =="
 for SEED in 3072 42; do
   train_run configs/wcm_spacetime_align.yaml "$SEED" "$BASE/wcm_spacetime_align_s$SEED" \
-    "$BASE/wcm_siglip_mosaic_s$SEED/deploy.pt"
+    "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt" \
+    "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt"
   "$PYTHON" -m scripts.check_spacetime_gates --alignment \
     "$BASE/wcm_spacetime_align_s$SEED/metrics.jsonl"
   train_run configs/wcm_spacetime_gate.yaml "$SEED" "$BASE/wcm_spacetime_gate_s$SEED" \
-    "$BASE/wcm_spacetime_align_s$SEED/deploy.pt"
+    "$BASE/wcm_spacetime_align_s$SEED/deploy.pt" \
+    "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt"
   train_run configs/wcm_spacetime_joint.yaml "$SEED" "$BASE/wcm_spacetime_joint_s$SEED" \
     "$BASE/wcm_spacetime_gate_s$SEED/deploy.pt"
   train_run configs/wcm_spacetime_full.yaml "$SEED" "$BASE/wcm_spacetime_full_s$SEED" \
@@ -93,7 +98,7 @@ for DATASET_NAME in 5cut ood; do
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "single_s$SEED" \
       "$BASE/wcm_siglip_single_s$SEED/deploy.pt"
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "mosaic_s$SEED" \
-      "$BASE/wcm_siglip_mosaic_s$SEED/deploy.pt"
+      "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt"
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "spacetime_s$SEED" \
       "$BASE/wcm_spacetime_full_s$SEED/deploy.pt"
   done
