@@ -21,10 +21,7 @@ echo "== 0/5 tests and teacher-free CUDA smoke =="
 
 train_run() {
   local config=$1 seed=$2 output=$3 init_from=${4:-} teacher=${5:-}
-  local epochs
-  epochs=$(awk '/^epochs:/ {print $2; exit}' "$config")
-  if [[ -f "$output/deploy.pt" && -f "$output/metrics.jsonl" ]] \
-    && [[ $(wc -l < "$output/metrics.jsonl") -eq "$epochs" ]]; then
+  if [[ -f "$output/deploy.pt" && -f "$output/metrics.jsonl" ]]; then
     echo "[skip] completed: $output"
     return
   fi

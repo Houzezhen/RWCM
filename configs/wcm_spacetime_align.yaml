@@ -21,6 +21,9 @@ gate_start: 0.0
 gate_end: 0.0
 selection_metric: alignment_cosine
 selection_mode: max
+early_stop_metric: alignment_cosine
+early_stop_threshold: 0.9
+early_stop_mode: max
 deploy_from_best: true
 data:
   repo_id: data_toiletButton_0814_expanded_with_return

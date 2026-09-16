@@ -37,6 +37,7 @@ class TemporalInputTest(unittest.TestCase):
 
         self.assertEqual(tuple(visual_tokens.shape), (2, 64, 16))
         self.assertEqual(tuple(pooled.shape), (2, 1, 16))
+        self.assertTrue(torch.equal(pooled, visual_tokens.mean(dim=1, keepdim=True)))
 
     def test_spacetime_perceiver_reads_oldest_history(self):
         encoder = self.spacetime_encoder().eval()

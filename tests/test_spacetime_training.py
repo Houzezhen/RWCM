@@ -4,7 +4,11 @@ import torch
 from torch import nn
 
 from world_critic.config import DataConfig, TrainConfig
-from world_critic.training import configure_training_stage, update_spacetime_gate
+from world_critic.training import (
+    configure_training_stage,
+    scheduled_alignment_weight,
+    update_spacetime_gate,
+)
 
 
 class DummySpaceTime(nn.Module):
@@ -16,8 +20,6 @@ class DummySpaceTime(nn.Module):
         self.perceiver_queries = nn.Parameter(torch.zeros(1, 64, 2))
         self.perceiver_layers = nn.ModuleList([nn.Linear(2, 2)])
         self.output_projection = nn.Linear(2, 2)
-        self.pool_query = nn.Parameter(torch.zeros(1, 1, 2))
-        self.pool_attention = nn.MultiheadAttention(2, 1, batch_first=True)
         self.register_buffer("blend_gate", torch.tensor(0.0))
 
     def set_gate(self, value: float):
@@ -88,6 +90,14 @@ class SpaceTimeTrainingTest(unittest.TestCase):
 
         self.assertEqual(update_spacetime_gate(model, config, 0, 11), 0.0)
         self.assertEqual(update_spacetime_gate(model, config, 10, 11), 1.0)
+
+    def test_alignment_weight_decays_to_zero_with_gate(self):
+        config = self.config("spacetime_gate")
+        config.alignment_weight_start = 0.2
+        config.alignment_weight_end = 0.0
+
+        self.assertEqual(scheduled_alignment_weight(config, 0, 11), 0.2)
+        self.assertEqual(scheduled_alignment_weight(config, 10, 11), 0.0)
 
     def test_full_stage_keeps_teacher_only_view_pool_frozen(self):
         model = DummyModel()

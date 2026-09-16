@@ -665,21 +665,10 @@ class FrozenVisualTeacher(nn.Module):
     def __init__(self, config: ModelConfig) -> None:
         super().__init__()
         self.vision_encoder = VisionEncoder(config)
-        self.view_pool_query = nn.Parameter(torch.zeros(1, 1, config.latent_dim))
-        self.view_attention = nn.MultiheadAttention(
-            config.latent_dim,
-            config.trunk_heads,
-            dropout=config.dropout,
-            batch_first=True,
-        )
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         view_latents = self.vision_encoder(images)
-        batch, time, views, dim = view_latents.shape
-        values = view_latents.reshape(batch * time, views, dim)
-        query = self.view_pool_query.expand(batch * time, 1, dim)
-        pooled, _ = self.view_attention(query, values, values, need_weights=False)
-        return pooled.reshape(batch, time, dim)
+        return view_latents.mean(dim=2)
 
 
 class CrossFrameQueryLayer(nn.Module):
@@ -876,13 +865,8 @@ class SpaceTimePerceiverEncoder(nn.Module):
             for _ in range(config.perceiver_layers)
         )
         self.output_projection = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim))
-        self.pool_query = nn.Parameter(torch.zeros(1, 1, dim))
-        self.pool_attention = nn.MultiheadAttention(
-            dim, config.spacetime_heads, dropout=0.0, batch_first=True
-        )
         self.register_buffer("blend_gate", torch.tensor(0.0), persistent=True)
         nn.init.normal_(self.perceiver_queries, std=0.02)
-        nn.init.normal_(self.pool_query, std=0.02)
 
     def set_gate(self, value: float) -> None:
         if not 0.0 <= value <= 1.0:
@@ -926,12 +910,7 @@ class SpaceTimePerceiverEncoder(nn.Module):
         for layer in self.perceiver_layers:
             queries = layer(queries, context)
         visual_tokens = self.output_projection(queries)
-        pooled, _ = self.pool_attention(
-            self.pool_query.expand(batch, -1, -1),
-            visual_tokens,
-            visual_tokens,
-            need_weights=False,
-        )
+        pooled = visual_tokens.mean(dim=1, keepdim=True)
         return visual_tokens, pooled
 
 
@@ -1548,18 +1527,23 @@ class WorldCriticModel(nn.Module):
             gate = float(self.spacetime_encoder.blend_gate)
             if self.config.spacetime_teacher_enabled:
                 if teacher_current_state is None:
-                    raise ValueError(
-                        "Teacher-enabled SpaceTime forward requires teacher_current_state."
+                    if gate != 1.0:
+                        raise ValueError(
+                            "Teacher-enabled SpaceTime forward requires teacher_current_state "
+                            "until blend_gate reaches 1."
+                        )
+                    teacher_current = None
+                    current_state = student_current
+                else:
+                    if teacher_current_state.shape != student_current.shape:
+                        raise ValueError(
+                            "Teacher current state shape differs from SpaceTime student: "
+                            f"{teacher_current_state.shape} vs {student_current.shape}."
+                        )
+                    teacher_current = teacher_current_state.detach()
+                    current_state = self.spacetime_encoder.blend(
+                        teacher_current, student_current
                     )
-                if teacher_current_state.shape != student_current.shape:
-                    raise ValueError(
-                        "Teacher current state shape differs from SpaceTime student: "
-                        f"{teacher_current_state.shape} vs {student_current.shape}."
-                    )
-                teacher_current = teacher_current_state.detach()
-                current_state = self.spacetime_encoder.blend(
-                    teacher_current, student_current
-                )
                 next_state = self.pool_views(self.vision_encoder(images[:, 1:]))
                 state_latents = torch.cat([current_state, next_state], dim=1)
             else:

@@ -18,6 +18,8 @@ ddp_timeout_minutes: 30
 training_stage: spacetime_gate
 gate_start: 0.0
 gate_end: 1.0
+alignment_weight_start: 0.2
+alignment_weight_end: 0.0
 selection_metric: value_mse
 selection_mode: min
 deploy_from_best: true

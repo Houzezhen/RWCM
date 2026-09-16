@@ -56,6 +56,7 @@ from .training import (
     enforce_training_stage_modes,
     evaluate_loader,
     move_batch_to_device,
+    scheduled_alignment_weight,
     seed_everything,
     update_spacetime_gate,
     wrap_ddp,
@@ -335,7 +336,7 @@ def run() -> None:
             def prepare_teacher() -> None:
                 nonlocal teacher_model
                 teacher_model = FrozenVisualTeacher(teacher_config.model).to(ctx.device)
-                prefixes = ("vision_encoder.", "view_pool_query", "view_attention.")
+                prefixes = ("vision_encoder.",)
                 teacher_state = {
                     key: value
                     for key, value in teacher_payload["model"].items()
@@ -484,6 +485,7 @@ def run() -> None:
             math.ceil(len(train_loader) / config.gradient_accumulation_steps) * config.epochs,
         )
         for epoch in range(start_epoch, config.epochs):
+            stop_after_epoch = False
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
             model.train()
@@ -499,9 +501,14 @@ def run() -> None:
                 current_gate = update_spacetime_gate(
                     model, config, global_step, total_training_steps
                 )
+                current_alignment_weight = scheduled_alignment_weight(
+                    config, global_step, total_training_steps
+                )
                 batch = move_batch_to_device(batch, ctx.device)
                 teacher_current_state = None
-                if teacher_model is not None:
+                if teacher_model is not None and not (
+                    current_gate == 1.0 and current_alignment_weight == 0.0
+                ):
                     with torch.no_grad(), autocast_context(ctx.device, config.precision):
                         teacher_current_state = teacher_model(batch["images"][:, :1])
                 accumulation_index = batch_index % config.gradient_accumulation_steps
@@ -529,6 +536,7 @@ def run() -> None:
                             sigreg,
                             ctx,
                             global_step,
+                            alignment_weight=current_alignment_weight,
                         )
                         loss = loss / config.gradient_accumulation_steps
                     loss.backward()
@@ -556,6 +564,7 @@ def run() -> None:
                         }
                         if current_gate is not None:
                             printable["spacetime_gate"] = current_gate
+                        printable["alignment_weight"] = current_alignment_weight
                         sparse_memory = getattr(
                             unwrap_model(model), "sparse_memory_encoder", None
                         )
@@ -594,8 +603,11 @@ def run() -> None:
             metrics = None
             is_best = False
             if val_loader is not None and (epoch + 1) % config.eval_every_epochs == 0:
+                validation_teacher = teacher_model
+                if current_gate == 1.0 and current_alignment_weight == 0.0:
+                    validation_teacher = None
                 metrics = evaluate_loader(
-                    model, val_loader, config, ctx, teacher_model=teacher_model
+                    model, val_loader, config, ctx, teacher_model=validation_teacher
                 )
                 def validate_validation_metrics() -> None:
                     if metrics is None or not math.isfinite(metrics["value_mse"]):
@@ -638,6 +650,13 @@ def run() -> None:
                             handle.write(json.dumps({"epoch": epoch, **metrics}) + "\n")
 
                 collectively_validate(ctx, "Validation metrics write", write_validation_metrics)
+                if config.early_stop_metric is not None:
+                    early_value = float(metrics[config.early_stop_metric])
+                    stop_after_epoch = (
+                        early_value <= config.early_stop_threshold
+                        if config.early_stop_mode == "min"
+                        else early_value >= config.early_stop_threshold
+                    )
 
             if is_best:
                 save_training_checkpoint(
@@ -678,6 +697,19 @@ def run() -> None:
             barrier(ctx)
             if ctx.is_main:
                 print(f"epoch={epoch} elapsed_s={time.monotonic() - epoch_started:.1f}")
+                if stop_after_epoch:
+                    print(
+                        json.dumps(
+                            {
+                                "early_stop": True,
+                                "metric": config.early_stop_metric,
+                                "threshold": config.early_stop_threshold,
+                                "epoch": epoch,
+                            }
+                        )
+                    )
+            if stop_after_epoch:
+                break
 
         if config.deploy_from_best:
             best_payload = load_checkpoint_payload(

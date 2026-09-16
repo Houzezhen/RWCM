@@ -219,6 +219,11 @@ class TrainConfig:
     training_stage: str = "standard"
     gate_start: float = 0.0
     gate_end: float = 0.0
+    alignment_weight_start: float | None = None
+    alignment_weight_end: float | None = None
+    early_stop_metric: str | None = None
+    early_stop_threshold: float | None = None
+    early_stop_mode: str = "max"
     unfreeze_vision_top_layers: int = 4
     selection_metric: str = "value_mse"
     selection_mode: str = "min"
@@ -587,6 +592,20 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("SpaceTime training stages require use_spacetime_perceiver=true.")
     if not 0.0 <= config.gate_start <= 1.0 or not 0.0 <= config.gate_end <= 1.0:
         raise ValueError("gate_start and gate_end must be in [0,1].")
+    if (config.alignment_weight_start is None) != (config.alignment_weight_end is None):
+        raise ValueError(
+            "alignment_weight_start and alignment_weight_end must both be set or both be null."
+        )
+    if config.alignment_weight_start is not None and (
+        config.alignment_weight_start < 0 or config.alignment_weight_end < 0
+    ):
+        raise ValueError("Scheduled alignment weights cannot be negative.")
+    if (config.early_stop_metric is None) != (config.early_stop_threshold is None):
+        raise ValueError(
+            "early_stop_metric and early_stop_threshold must both be set or both be null."
+        )
+    if config.early_stop_mode not in {"min", "max"}:
+        raise ValueError("early_stop_mode must be 'min' or 'max'.")
     if config.unfreeze_vision_top_layers < 0:
         raise ValueError("unfreeze_vision_top_layers cannot be negative.")
     if config.selection_mode not in {"min", "max"}:

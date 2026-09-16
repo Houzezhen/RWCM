@@ -123,8 +123,6 @@ def configure_training_stage(model: torch.nn.Module, config: TrainConfig) -> dic
                     "perceiver_queries",
                     "perceiver_layers.",
                     "output_projection.",
-                    "pool_query",
-                    "pool_attention.",
                 )
             ):
                 parameter.requires_grad_(True)
@@ -180,6 +178,20 @@ def update_spacetime_gate(
     gate = config.gate_start + (config.gate_end - config.gate_start) * progress
     spacetime.set_gate(float(gate))
     return float(gate)
+
+
+def scheduled_alignment_weight(
+    config: TrainConfig,
+    global_step: int,
+    total_steps: int,
+) -> float:
+    if config.alignment_weight_start is None:
+        return float(config.loss.alignment_weight)
+    progress = min(max(global_step / max(total_steps - 1, 1), 0.0), 1.0)
+    return float(
+        config.alignment_weight_start
+        + (config.alignment_weight_end - config.alignment_weight_start) * progress
+    )
 
 
 def enforce_training_stage_modes(model: torch.nn.Module, config: TrainConfig) -> None:
@@ -342,6 +354,7 @@ def compute_losses(
     sigreg: SIGReg | None,
     ctx: DistributedContext,
     global_step: int,
+    alignment_weight: float | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     valid = output.valid_mask.unsqueeze(-1)
     return_target = canonicalize_return_target(batch["return_targets"])
@@ -417,7 +430,10 @@ def compute_losses(
 
     alignment_loss = output.context_latent.new_zeros(())
     alignment_metric = output.context_latent.new_zeros((), dtype=torch.float64)
-    if loss_config.alignment_weight > 0:
+    effective_alignment_weight = (
+        loss_config.alignment_weight if alignment_weight is None else alignment_weight
+    )
+    if effective_alignment_weight > 0:
         if output.alignment_student is None or output.alignment_teacher is None:
             raise ValueError("Alignment loss requires student and teacher visual latents.")
         student = output.alignment_student.float()
@@ -471,7 +487,7 @@ def compute_losses(
         + loss_config.next_state_weight * state_loss
         + loss_config.next_state_vector_weight * vector_loss
         + loss_config.sigreg_weight * sigreg_loss
-        + loss_config.alignment_weight * alignment_loss
+        + effective_alignment_weight * alignment_loss
         + loss_config.risk_weight * risk_loss
         + loss_config.q_weight * q_loss
     )
@@ -481,7 +497,7 @@ def compute_losses(
         + loss_config.next_state_weight * state_metric
         + loss_config.next_state_vector_weight * vector_metric
         + loss_config.sigreg_weight * sigreg_loss.detach().double()
-        + loss_config.alignment_weight * alignment_metric
+        + effective_alignment_weight * alignment_metric
         + loss_config.risk_weight * risk_metric
         + loss_config.q_weight * q_metric
     )
@@ -493,6 +509,7 @@ def compute_losses(
         "next_state_vector_loss": vector_metric,
         "sigreg_loss": sigreg_loss.detach(),
         "alignment_loss": alignment_metric,
+        "alignment_weight": output.context_latent.new_tensor(effective_alignment_weight),
         "risk_loss": risk_metric,
         "q_loss": q_metric,
         "global_value_count": global_value_count.detach(),
