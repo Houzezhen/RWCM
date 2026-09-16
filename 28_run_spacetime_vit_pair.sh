@@ -46,7 +46,7 @@ mkdir -p outputs/batch_logs "$EVAL_ROOT/comparisons"
 echo "== 0/5 tests and teacher-free CUDA smoke =="
 "$PYTHON" -m pytest tests/test_temporal_input.py tests/test_register_config.py \
   tests/test_spacetime_training.py tests/test_ranking_loss.py \
-  tests/test_compare_experiments.py -q
+  tests/test_compare_experiments.py tests/test_spacetime_gates.py -q
 env WCM_SPACETIME_FRAME_COUNT="$FRAME_COUNT" WCM_HISTORY_OFFSETS="$HISTORY_OFFSETS" \
   "$PYTHON" -u -m scripts.smoke_test_spacetime_perceiver \
   --config configs/wcm_spacetime_joint.yaml --device cuda
@@ -92,11 +92,19 @@ for SEED in 3072 42; do
     "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt" \
     "$FRAME_COUNT" "$HISTORY_OFFSETS"
   "$PYTHON" -m scripts.check_spacetime_gates --alignment \
-    "$BASE/wcm_spacetime_vit_${VARIANT}_align_s$SEED/metrics.jsonl"
+    "$BASE/wcm_spacetime_vit_${VARIANT}_align_s$SEED/alignment_summary.json"
+  "$PYTHON" -u -m scripts.check_spacetime_equivalence \
+    --baseline "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt" \
+    --gate-zero "$BASE/wcm_spacetime_vit_${VARIANT}_align_s$SEED/deploy.pt" \
+    --device cuda --tolerance 1e-5
   train_run configs/wcm_spacetime_gate.yaml "$SEED" "$BASE/wcm_spacetime_vit_${VARIANT}_gate_s$SEED" \
     "$BASE/wcm_spacetime_vit_${VARIANT}_align_s$SEED/deploy.pt" \
     "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt" \
     "$FRAME_COUNT" "$HISTORY_OFFSETS"
+  "$PYTHON" -u -m scripts.check_spacetime_equivalence \
+    --baseline "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt" \
+    --gate-one "$BASE/wcm_spacetime_vit_${VARIANT}_gate_s$SEED/deploy.pt" \
+    --device cuda --tolerance 1e-5
   train_run configs/wcm_spacetime_joint.yaml "$SEED" "$BASE/wcm_spacetime_vit_${VARIANT}_joint_s$SEED" \
     "$BASE/wcm_spacetime_vit_${VARIANT}_gate_s$SEED/deploy.pt" "" \
     "$FRAME_COUNT" "$HISTORY_OFFSETS"

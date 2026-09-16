@@ -21,9 +21,6 @@ gate_start: 0.0
 gate_end: 0.0
 selection_metric: alignment_cosine
 selection_mode: max
-early_stop_metric: alignment_cosine
-early_stop_threshold: 0.9
-early_stop_mode: max
 alignment_plateau_patience_steps: 4000
 alignment_plateau_min_delta: 1.0e-4
 alignment_plateau_ema_decay: 0.99

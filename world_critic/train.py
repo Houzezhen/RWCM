@@ -497,6 +497,7 @@ def run() -> None:
             math.ceil(len(train_loader) / config.gradient_accumulation_steps) * config.epochs,
         )
         alignment_plateau = None
+        alignment_plateau_reached = False
         if config.alignment_plateau_patience_steps > 0:
             alignment_plateau = AlignmentPlateauMonitor(
                 patience_steps=config.alignment_plateau_patience_steps,
@@ -648,6 +649,7 @@ def run() -> None:
                             postfix["stale"] = alignment_plateau.steps_since_improvement
                         progress.set_postfix(**postfix)
                     if plateau_stop:
+                        alignment_plateau_reached = True
                         break
 
             metrics = None
@@ -777,6 +779,30 @@ def run() -> None:
                     )
             if stop_after_epoch or plateau_stop:
                 break
+
+        if alignment_plateau is not None:
+            def write_alignment_summary() -> None:
+                if ctx.is_main:
+                    summary = {
+                        "plateau_reached": alignment_plateau_reached,
+                        "best_cosine_ema": alignment_plateau.best_ema,
+                        "final_cosine_ema": alignment_plateau.ema,
+                        "steps_since_improvement": (
+                            alignment_plateau.steps_since_improvement
+                        ),
+                        "patience_steps": config.alignment_plateau_patience_steps,
+                        "min_delta": config.alignment_plateau_min_delta,
+                        "ema_decay": config.alignment_plateau_ema_decay,
+                        "best_validation_cosine": best_metric,
+                        "global_step": global_step,
+                    }
+                    temporary = output_dir / "alignment_summary.json.tmp"
+                    temporary.write_text(
+                        json.dumps(summary, indent=2), encoding="utf-8"
+                    )
+                    temporary.replace(output_dir / "alignment_summary.json")
+
+            collectively_validate(ctx, "Alignment summary write", write_alignment_summary)
 
         if config.deploy_from_best:
             best_payload = load_checkpoint_payload(
