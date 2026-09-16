@@ -129,7 +129,7 @@ class RegisterConfigValidationTest(unittest.TestCase):
         config.data.history_mosaic = True
         config.data.history_frames = True
         config.data.success_key = "episode_success"
-        config.model.vision.model_name = "google/siglip-base-patch16-224"
+        config.model.vision.model_name = "google/vit-base-patch16-224-in21k"
         config.model.use_spacetime_perceiver = True
         config.model.spacetime_teacher_enabled = True
         config.teacher_checkpoint = "teacher.pt"

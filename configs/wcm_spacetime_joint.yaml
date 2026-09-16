@@ -1,6 +1,6 @@
-# Stage 2: teacher-free gate=1; unfreeze top four SigLIP layers and WCM heads.
-output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_joint_s3072
-init_from: /media/Data/user/WCM_outputs/wcm_spacetime_gate_s3072/deploy.pt
+# Stage 2: teacher-free gate=1; unfreeze top four ViT layers and WCM heads.
+output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_vit_joint_s3072
+init_from: /media/Data/user/WCM_outputs/wcm_spacetime_vit_gate_s3072/deploy.pt
 seed: 3072
 epochs: 5
 per_device_batch_size: 2
@@ -59,7 +59,7 @@ model:
   spacetime_temporal_enabled: true
   predict_risk: true
   predict_q: true
-  vision: {model_name: google/siglip-base-patch16-224, image_size: 224, trainable: true, pretrained: true, num_register_tokens: 0}
+  vision: {model_name: google/vit-base-patch16-224-in21k, image_size: 224, trainable: true, pretrained: true, num_register_tokens: 0}
   language: {model_name: openai/clip-vit-base-patch32, max_length: 77, trainable: false, pretrained: true, fusion_layers: 2, fusion_heads: 8, fusion_dropout: 0.0}
 loss: {value_weight: 1.0, ranking_weight: 0.05, ranking_temperature: 0.1, ranking_min_target_gap: 0.1, next_state_weight: 0.1, sigreg_weight: 0.01, risk_weight: 0.2, q_weight: 0.5}
 optim: {lr: 1.0e-5, weight_decay: 1.0e-3, betas: [0.9, 0.95], warmup_steps: 150, min_lr_ratio: 0.1}

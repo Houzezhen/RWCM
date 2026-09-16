@@ -173,7 +173,10 @@ def configure_training_stage(model: torch.nn.Module, config: TrainConfig) -> dic
             "vision_model",
             raw_model.vision_encoder.backbone,
         )
-        unfreeze(getattr(vision_root, "post_layernorm", None))
+        final_norm = getattr(vision_root, "post_layernorm", None)
+        if final_norm is None:
+            final_norm = getattr(vision_root, "layernorm", None)
+        unfreeze(final_norm)
         unfreeze(raw_model.language_fusion)
         unfreeze(raw_model.context_trunk)
         unfreeze(raw_model.value_head)
@@ -644,9 +647,12 @@ def evaluate_loader(
             forward_started = time.monotonic()
             batch = move_batch_to_device(batch, ctx.device)
             teacher_current_state = None
+            teacher_alignment_state = None
             if teacher_model is not None:
                 with autocast_context(ctx.device, config.precision):
-                    teacher_current_state = teacher_model(batch["images"][:, :1])
+                    teacher_current_state, teacher_alignment_state = teacher_model(
+                        batch["images"][:, :1]
+                    )
             with autocast_context(ctx.device, config.precision):
                 output = unwrap_model(model)(
                     images=batch["images"],
@@ -657,6 +663,7 @@ def evaluate_loader(
                     state_vectors=batch.get("state_vectors"),
                     history_images=batch.get("history_images"),
                     teacher_current_state=teacher_current_state,
+                    teacher_alignment_state=teacher_alignment_state,
                 )
             return_target = canonicalize_return_target(batch["return_targets"])
             valid = output.valid_mask.bool()

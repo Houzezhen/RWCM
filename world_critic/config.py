@@ -122,7 +122,7 @@ class ModelConfig:
     use_mosaic_temporal_residual: bool = False
     mosaic_temporal_heads: int = 4
     mosaic_temporal_mlp_ratio: float = 2.0
-    # Raw history frames are encoded by a shared SigLIP, mixed along time,
+    # Raw history frames are encoded by the shared image ViT, mixed along time,
     # then compressed to a fixed visual-token budget by a Perceiver reducer.
     use_spacetime_perceiver: bool = False
     spacetime_frame_count: int = 4
@@ -513,8 +513,6 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError(
                 "history_mosaic must be false when the SpaceTime teacher is disabled."
             )
-        if "siglip" not in config.model.vision.model_name.lower():
-            raise ValueError("SpaceTime Perceiver requires a SigLIP vision checkpoint.")
         if config.model.predict_risk and config.data.success_key is None:
             raise ValueError("predict_risk=true requires data.success_key.")
         if config.loss.risk_weight > 0 and not config.model.predict_risk:

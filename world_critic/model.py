@@ -660,15 +660,26 @@ class VisionEncoder(nn.Module):
 
 
 class FrozenVisualTeacher(nn.Module):
-    """Minimal visual subset of a trained WCM used for latent distillation."""
+    """Frozen Image-B4 visual path for baseline gating and mean-pooled alignment."""
 
     def __init__(self, config: ModelConfig) -> None:
         super().__init__()
         self.vision_encoder = VisionEncoder(config)
+        self.view_pool_query = nn.Parameter(torch.zeros(1, 1, config.latent_dim))
+        self.view_attention = nn.MultiheadAttention(
+            config.latent_dim,
+            config.trunk_heads,
+            dropout=config.dropout,
+            batch_first=True,
+        )
 
-    def forward(self, images: torch.Tensor) -> torch.Tensor:
+    def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         view_latents = self.vision_encoder(images)
-        return view_latents.mean(dim=2)
+        batch, time, views, dim = view_latents.shape
+        values = view_latents.reshape(batch * time, views, dim)
+        query = self.view_pool_query.expand(batch * time, 1, dim)
+        baseline, _ = self.view_attention(query, values, values, need_weights=False)
+        return baseline.reshape(batch, time, dim), view_latents.mean(dim=2)
 
 
 class CrossFrameQueryLayer(nn.Module):
@@ -835,7 +846,7 @@ class _PerceiverReducerLayer(nn.Module):
 
 
 class SpaceTimePerceiverEncoder(nn.Module):
-    """Encode raw SigLIP frame tokens into a fixed history-token budget."""
+    """Encode frame-wise ViT tokens into a fixed history-token budget."""
 
     def __init__(self, config: ModelConfig) -> None:
         super().__init__()
@@ -866,6 +877,7 @@ class SpaceTimePerceiverEncoder(nn.Module):
         )
         self.output_projection = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim))
         self.register_buffer("blend_gate", torch.tensor(0.0), persistent=True)
+        nn.init.normal_(self.time_embedding, std=0.02)
         nn.init.normal_(self.perceiver_queries, std=0.02)
 
     def set_gate(self, value: float) -> None:
@@ -1234,6 +1246,49 @@ class ActionFreeContextTrunk(nn.Module):
         )
         return self.output_norm(output)
 
+    def forward_token_groups(
+        self,
+        state_tokens: torch.Tensor,
+        token_mask: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Process multiple visual tokens per environment timestep, then read out one state."""
+        if state_tokens.ndim != 4:
+            raise ValueError(
+                f"Grouped state tokens must be [B,T,K,D], got {state_tokens.shape}."
+            )
+        batch, time, tokens_per_step, dim = state_tokens.shape
+        if token_mask.shape != (batch, time, tokens_per_step):
+            raise ValueError(
+                "token_mask must match grouped state tokens: "
+                f"expected {(batch, time, tokens_per_step)}, got {token_mask.shape}."
+            )
+        if valid_mask.shape != (batch, time):
+            raise ValueError(
+                f"valid_mask must be [B,T], got {valid_mask.shape}."
+            )
+        if time > self.max_history:
+            raise ValueError(f"History {time} exceeds configured max_history={self.max_history}.")
+        if not valid_mask.any(dim=1).all():
+            raise ValueError("Every sequence must contain at least one valid observation token.")
+        if not (token_mask.bool().any(dim=2) | ~valid_mask.bool()).all():
+            raise ValueError("Every valid timestep must contain at least one visual token.")
+
+        grouped = state_tokens + self.time_embedding[:, :time, None]
+        flattened = grouped.reshape(batch, time * tokens_per_step, dim)
+        step_index = torch.arange(time * tokens_per_step, device=state_tokens.device)
+        step_index = step_index // tokens_per_step
+        block_causal_mask = step_index[:, None] < step_index[None, :]
+        active_tokens = token_mask.bool() & valid_mask.bool().unsqueeze(-1)
+        output = self.transformer(
+            flattened,
+            mask=block_causal_mask,
+            src_key_padding_mask=~active_tokens.reshape(batch, time * tokens_per_step),
+        )
+        output = self.output_norm(output).view(batch, time, tokens_per_step, dim)
+        readout_mask = token_mask.to(output.dtype).unsqueeze(-1)
+        return (output * readout_mask).sum(dim=2) / readout_mask.sum(dim=2).clamp_min(1.0)
+
 
 class GatedDynamicsBlock(nn.Module):
     """FiLM-modulated, gated residual update in predictor hidden space."""
@@ -1465,6 +1520,24 @@ class WorldCriticModel(nn.Module):
             fused = self.temporal_registers(fused, valid_mask)
         return self.context_trunk(fused, valid_mask)
 
+    def encode_grouped_context(
+        self,
+        visual_tokens: torch.Tensor,
+        visual_token_mask: torch.Tensor,
+        instruction_tokens: torch.Tensor,
+        instruction_mask: torch.Tensor,
+        valid_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        batch, time, token_count, dim = visual_tokens.shape
+        fused = self.language_fusion(
+            visual_tokens.reshape(batch, time * token_count, dim),
+            instruction_tokens,
+            instruction_mask,
+        ).view(batch, time, token_count, dim)
+        return self.context_trunk.forward_token_groups(
+            fused, visual_token_mask, valid_mask
+        )
+
     def forward(
         self,
         images: torch.Tensor,
@@ -1475,6 +1548,7 @@ class WorldCriticModel(nn.Module):
         state_vectors: torch.Tensor | None = None,
         history_images: torch.Tensor | None = None,
         teacher_current_state: torch.Tensor | None = None,
+        teacher_alignment_state: torch.Tensor | None = None,
     ) -> WorldCriticOutput:
         if images.ndim not in (5, 6):
             raise ValueError(f"Expected images [B,T,C,H,W] or [B,T,V,C,H,W], got {images.shape}")
@@ -1523,7 +1597,7 @@ class WorldCriticModel(nn.Module):
             if history_images.device != images.device:
                 raise ValueError("history_images and images must be on the same device.")
             history_tokens = self.vision_encoder.encode_tokens(history_images)
-            _, student_current = self.spacetime_encoder(history_tokens)
+            student_visual_tokens, student_current = self.spacetime_encoder(history_tokens)
             gate = float(self.spacetime_encoder.blend_gate)
             if self.config.spacetime_teacher_enabled:
                 if teacher_current_state is None:
@@ -1533,14 +1607,22 @@ class WorldCriticModel(nn.Module):
                             "until blend_gate reaches 1."
                         )
                     teacher_current = None
+                    alignment_teacher = None
                     current_state = student_current
                 else:
-                    if teacher_current_state.shape != student_current.shape:
+                    if (
+                        teacher_current_state.shape != student_current.shape
+                        or teacher_alignment_state is None
+                        or teacher_alignment_state.shape != student_current.shape
+                    ):
                         raise ValueError(
-                            "Teacher current state shape differs from SpaceTime student: "
-                            f"{teacher_current_state.shape} vs {student_current.shape}."
+                            "Teacher baseline/alignment states must match the SpaceTime student: "
+                            f"baseline={teacher_current_state.shape}, "
+                            f"alignment={None if teacher_alignment_state is None else teacher_alignment_state.shape}, "
+                            f"student={student_current.shape}."
                         )
                     teacher_current = teacher_current_state.detach()
+                    alignment_teacher = teacher_alignment_state.detach()
                     current_state = self.spacetime_encoder.blend(
                         teacher_current, student_current
                     )
@@ -1552,6 +1634,7 @@ class WorldCriticModel(nn.Module):
                         "Teacher-free SpaceTime inference requires blend_gate=1."
                     )
                 teacher_current = None
+                alignment_teacher = None
                 next_state = self.pool_views(self.vision_encoder(images[:, 1:]))
                 state_latents = torch.cat([student_current, next_state], dim=1)
         elif (
@@ -1632,7 +1715,62 @@ class WorldCriticModel(nn.Module):
             instruction_input_ids,
             instruction_attention_mask,
         )
-        context = self.encode_context(state_latents[:, :-1], text_tokens, text_mask, valid_mask)
+        if self.spacetime_encoder is None:
+            context = self.encode_context(
+                state_latents[:, :-1], text_tokens, text_mask, valid_mask
+            )
+        else:
+            gate = float(self.spacetime_encoder.blend_gate)
+            if gate == 0.0:
+                # Preserve the frozen mosaic baseline exactly while the
+                # Perceiver is being aligned.
+                context = self.encode_context(
+                    state_latents[:, :-1], text_tokens, text_mask, valid_mask
+                )
+            else:
+                batch, action_steps = actions.shape[:2]
+                token_count = student_visual_tokens.size(1)
+                grouped_tokens = student_visual_tokens.new_zeros(
+                    (batch, action_steps, token_count, student_visual_tokens.size(-1))
+                )
+                grouped_mask = torch.zeros(
+                    batch,
+                    action_steps,
+                    token_count,
+                    dtype=torch.bool,
+                    device=student_visual_tokens.device,
+                )
+                grouped_tokens[:, 0] = student_visual_tokens
+                grouped_mask[:, 0] = True
+                if action_steps > 1:
+                    grouped_tokens[:, 1:, 0] = state_latents[:, 1:-1]
+                    grouped_mask[:, 1:, 0] = True
+                if self.proprioception_encoder is not None:
+                    # Later singleton groups already come from state_latents,
+                    # where proprioception was added above. Only the 64-token
+                    # current group still needs the current proprioceptive state.
+                    grouped_tokens[:, 0] = (
+                        grouped_tokens[:, 0]
+                        + self.proprioception_encoder(state_vectors[:, :1])
+                    )
+                student_context = self.encode_grouped_context(
+                    grouped_tokens,
+                    grouped_mask,
+                    text_tokens,
+                    text_mask,
+                    valid_mask,
+                )
+                if gate == 1.0:
+                    context = student_context
+                else:
+                    baseline_context = self.encode_context(
+                        state_latents[:, :-1], text_tokens, text_mask, valid_mask
+                    )
+                    context = torch.lerp(
+                        baseline_context,
+                        student_context,
+                        self.spacetime_encoder.blend_gate.to(student_context.dtype),
+                    )
 
         # This line executes before `actions` is consumed anywhere in the graph.
         value = self.value_head(context)
@@ -1656,7 +1794,7 @@ class WorldCriticModel(nn.Module):
             valid_mask=valid_mask,
             next_state_vector_pred=state_vector_pred,
             alignment_student=student_current if self.spacetime_encoder is not None else None,
-            alignment_teacher=teacher_current if self.spacetime_encoder is not None else None,
+            alignment_teacher=alignment_teacher if self.spacetime_encoder is not None else None,
             risk_logits=risk_logits,
             q_value=q_value,
         )

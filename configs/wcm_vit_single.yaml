@@ -1,5 +1,5 @@
-# Single-frame SigLIP baseline for the history-encoder experiment.
-output_dir: /media/Data/user/WCM_outputs/wcm_siglip_single_s3072
+# Single-frame ViT baseline for the history-encoder experiment.
+output_dir: /media/Data/user/WCM_outputs/wcm_vit_single_s3072
 seed: 3072
 epochs: 10
 per_device_batch_size: 2
@@ -37,7 +37,7 @@ model:
   value_hidden_dim: 384
   dynamics_depth: 3
   action_hidden_dim: 384
-  vision: {model_name: google/siglip-base-patch16-224, image_size: 224, trainable: true, pretrained: true, num_register_tokens: 0}
+  vision: {model_name: google/vit-base-patch16-224-in21k, image_size: 224, trainable: true, pretrained: true, num_register_tokens: 0}
   language: {model_name: openai/clip-vit-base-patch32, max_length: 77, trainable: false, pretrained: true, fusion_layers: 2, fusion_heads: 8, fusion_dropout: 0.0}
 loss: {value_weight: 1.0, next_state_weight: 1.0, sigreg_weight: 0.01, sigreg_knots: 17, sigreg_num_projections: 1024}
 optim: {lr: 1.0e-5, weight_decay: 1.0e-3, betas: [0.9, 0.95], warmup_steps: 300, min_lr_ratio: 0.1}

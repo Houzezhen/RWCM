@@ -1,5 +1,5 @@
-# Stage 0: frozen mosaic teacher/SigLIP/WCM; train Perceiver projection only.
-output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_align_s3072
+# Stage 0: frozen mosaic teacher/shared ViT/WCM; train Perceiver projection only.
+output_dir: /media/Data/user/WCM_outputs/wcm_spacetime_vit_align_s3072
 init_from: /media/Data/user/WCM_outputs/wcm_sparse4_image_b4_exp_s3072/deploy.pt
 teacher_checkpoint: /media/Data/user/WCM_outputs/wcm_sparse4_image_b4_exp_s3072/deploy.pt
 partial_init: true
@@ -66,7 +66,7 @@ model:
   spacetime_temporal_enabled: false
   predict_risk: true
   predict_q: true
-  vision: {model_name: google/siglip-base-patch16-224, image_size: 224, trainable: true, pretrained: true, num_register_tokens: 0}
+  vision: {model_name: google/vit-base-patch16-224-in21k, image_size: 224, trainable: true, pretrained: true, num_register_tokens: 0}
   language: {model_name: openai/clip-vit-base-patch32, max_length: 77, trainable: false, pretrained: true, fusion_layers: 2, fusion_heads: 8, fusion_dropout: 0.0}
 loss: {value_weight: 0.0, ranking_weight: 0.0, next_state_weight: 0.0, sigreg_weight: 0.0, alignment_weight: 1.0, alignment_mse_weight: 0.1}
 optim: {lr: 1.0e-4, weight_decay: 1.0e-3, betas: [0.9, 0.95], warmup_steps: 150, min_lr_ratio: 0.1}

@@ -337,7 +337,7 @@ def run() -> None:
             def prepare_teacher() -> None:
                 nonlocal teacher_model
                 teacher_model = FrozenVisualTeacher(teacher_config.model).to(ctx.device)
-                prefixes = ("vision_encoder.",)
+                prefixes = ("vision_encoder.", "view_pool_query", "view_attention.")
                 teacher_state = {
                     key: value
                     for key, value in teacher_payload["model"].items()
@@ -390,9 +390,9 @@ def run() -> None:
                     for key, value in payload["model"].items()
                     if key in target_state
                     and target_state[key].shape == value.shape
-                    and not key.startswith("vision_encoder.backbone.")
                 }
                 required_prefixes = (
+                    "vision_encoder.backbone.",
                     "vision_encoder.projection.",
                     "view_attention.",
                     "language_fusion.",
@@ -414,6 +414,17 @@ def run() -> None:
                 )
                 if unexpected:
                     raise RuntimeError(f"Partial init produced unexpected keys: {unexpected}")
+                raw_model = unwrap_model(model)
+                if raw_model.spacetime_encoder is not None:
+                    source_camera = raw_model.vision_encoder.camera_embedding.detach().unsqueeze(3)
+                    target_camera = raw_model.spacetime_encoder.camera_embedding
+                    if source_camera.shape != target_camera.shape:
+                        raise RuntimeError(
+                            "Cannot initialize SpaceTime camera embeddings from the WCM: "
+                            f"{source_camera.shape} != {target_camera.shape}."
+                        )
+                    with torch.no_grad():
+                        target_camera.copy_(source_camera)
                 if ctx.is_main:
                     print(
                         json.dumps(
@@ -515,11 +526,14 @@ def run() -> None:
                 )
                 batch = move_batch_to_device(batch, ctx.device)
                 teacher_current_state = None
+                teacher_alignment_state = None
                 if teacher_model is not None and not (
                     current_gate == 1.0 and current_alignment_weight == 0.0
                 ):
                     with torch.no_grad(), autocast_context(ctx.device, config.precision):
-                        teacher_current_state = teacher_model(batch["images"][:, :1])
+                        teacher_current_state, teacher_alignment_state = teacher_model(
+                            batch["images"][:, :1]
+                        )
                 accumulation_index = batch_index % config.gradient_accumulation_steps
                 sync_step = (
                     accumulation_index == config.gradient_accumulation_steps - 1
@@ -537,6 +551,7 @@ def run() -> None:
                             state_vectors=batch.get("state_vectors"),
                             history_images=batch.get("history_images"),
                             teacher_current_state=teacher_current_state,
+                            teacher_alignment_state=teacher_alignment_state,
                         )
                         loss, loss_parts = compute_losses(
                             output,

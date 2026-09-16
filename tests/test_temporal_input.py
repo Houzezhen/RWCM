@@ -5,6 +5,7 @@ import torch
 from world_critic.config import ModelConfig
 from world_critic.data import _make_temporal_mosaic
 from world_critic.model import (
+    ActionFreeContextTrunk,
     CausalPatchTemporalAdapter,
     MosaicTemporalResidual,
     SpaceTimePerceiverEncoder,
@@ -58,6 +59,29 @@ class TemporalInputTest(unittest.TestCase):
         self.assertTrue(torch.equal(encoder.blend(teacher, student), student))
         with self.assertRaisesRegex(ValueError, "must be in"):
             encoder.set_gate(1.1)
+
+    def test_context_trunk_consumes_all_perceiver_tokens_before_readout(self):
+        config = ModelConfig(
+            latent_dim=16,
+            max_history=4,
+            trunk_depth=2,
+            trunk_heads=4,
+            trunk_mlp_ratio=2.0,
+            dropout=0.0,
+        )
+        trunk = ActionFreeContextTrunk(config).eval()
+        tokens = torch.randn(2, 2, 64, 16, requires_grad=True)
+        token_mask = torch.zeros(2, 2, 64, dtype=torch.bool)
+        token_mask[:, 0] = True
+        token_mask[:, 1, 0] = True
+        valid_mask = torch.ones(2, 2, dtype=torch.bool)
+
+        output = trunk.forward_token_groups(tokens, token_mask, valid_mask)
+        output[:, 0].square().mean().backward()
+
+        self.assertEqual(tuple(output.shape), (2, 2, 16))
+        self.assertGreater(float(tokens.grad[:, 0, 1:].abs().sum()), 0.0)
+        self.assertEqual(float(tokens.grad[:, 1].abs().sum()), 0.0)
 
     def mosaic_residual(self):
         return MosaicTemporalResidual(

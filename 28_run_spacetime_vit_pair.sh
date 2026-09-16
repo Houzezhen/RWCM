@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reuse the trained Image-B4 teacher and train SpaceTime SigLIP Perceiver-64.
+# Reuse the trained Image-B4 teacher and its ViT in SpaceTime Perceiver-64.
 set -euo pipefail
 cd "$(dirname -- "${BASH_SOURCE[0]}")"
 
@@ -9,7 +9,7 @@ export WANDB_MODE="${WANDB_MODE:-offline}"
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 export WCM_EXPECTED_WORLD_SIZE=1
 BASE="/media/Data/user/WCM_outputs"
-EVAL_ROOT="outputs/eval_spacetime_siglip_pair"
+EVAL_ROOT="outputs/eval_spacetime_vit_pair"
 mkdir -p outputs/batch_logs "$EVAL_ROOT/comparisons"
 
 echo "== 0/5 tests and teacher-free CUDA smoke =="
@@ -45,29 +45,29 @@ train_run() {
   fi
 }
 
-echo "== 1/5 train single-frame SigLIP control; reuse existing Image-B4 mosaic =="
+echo "== 1/5 train single-frame ViT control; reuse existing Image-B4 mosaic =="
 for SEED in 3072 42; do
-  train_run configs/wcm_siglip_single.yaml "$SEED" "$BASE/wcm_siglip_single_s$SEED"
+  train_run configs/wcm_vit_single.yaml "$SEED" "$BASE/wcm_vit_single_s$SEED"
 done
 
 echo "== 2/5 run four-stage SpaceTime Perceiver training =="
 for SEED in 3072 42; do
-  train_run configs/wcm_spacetime_align.yaml "$SEED" "$BASE/wcm_spacetime_align_s$SEED" \
+  train_run configs/wcm_spacetime_align.yaml "$SEED" "$BASE/wcm_spacetime_vit_align_s$SEED" \
     "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt" \
     "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt"
   "$PYTHON" -m scripts.check_spacetime_gates --alignment \
-    "$BASE/wcm_spacetime_align_s$SEED/metrics.jsonl"
-  train_run configs/wcm_spacetime_gate.yaml "$SEED" "$BASE/wcm_spacetime_gate_s$SEED" \
-    "$BASE/wcm_spacetime_align_s$SEED/deploy.pt" \
+    "$BASE/wcm_spacetime_vit_align_s$SEED/metrics.jsonl"
+  train_run configs/wcm_spacetime_gate.yaml "$SEED" "$BASE/wcm_spacetime_vit_gate_s$SEED" \
+    "$BASE/wcm_spacetime_vit_align_s$SEED/deploy.pt" \
     "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt"
-  train_run configs/wcm_spacetime_joint.yaml "$SEED" "$BASE/wcm_spacetime_joint_s$SEED" \
-    "$BASE/wcm_spacetime_gate_s$SEED/deploy.pt"
-  train_run configs/wcm_spacetime_full.yaml "$SEED" "$BASE/wcm_spacetime_full_s$SEED" \
-    "$BASE/wcm_spacetime_joint_s$SEED/deploy.pt"
+  train_run configs/wcm_spacetime_joint.yaml "$SEED" "$BASE/wcm_spacetime_vit_joint_s$SEED" \
+    "$BASE/wcm_spacetime_vit_gate_s$SEED/deploy.pt"
+  train_run configs/wcm_spacetime_full.yaml "$SEED" "$BASE/wcm_spacetime_vit_full_s$SEED" \
+    "$BASE/wcm_spacetime_vit_joint_s$SEED/deploy.pt"
 done
 "$PYTHON" -m scripts.check_spacetime_gates --checkpoint \
-  "$BASE/wcm_spacetime_full_s3072/deploy.pt" \
-  "$BASE/wcm_spacetime_full_s42/deploy.pt"
+  "$BASE/wcm_spacetime_vit_full_s3072/deploy.pt" \
+  "$BASE/wcm_spacetime_vit_full_s42/deploy.pt"
 
 run_eval() {
   local dataset_name=$1 dataset_root=$2 model_name=$3 checkpoint=$4
@@ -93,11 +93,11 @@ for DATASET_NAME in 5cut ood; do
   fi
   for SEED in 3072 42; do
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "single_s$SEED" \
-      "$BASE/wcm_siglip_single_s$SEED/deploy.pt"
+      "$BASE/wcm_vit_single_s$SEED/deploy.pt"
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "mosaic_s$SEED" \
       "$BASE/wcm_sparse4_image_b4_exp_s$SEED/deploy.pt"
     run_eval "$DATASET_NAME" "$DATASET_ROOT" "spacetime_s$SEED" \
-      "$BASE/wcm_spacetime_full_s$SEED/deploy.pt"
+      "$BASE/wcm_spacetime_vit_full_s$SEED/deploy.pt"
   done
 done
 
@@ -118,4 +118,4 @@ done
   "$EVAL_ROOT/comparisons/ood_spacetime_vs_mosaic_s3072.json" \
   "$EVAL_ROOT/comparisons/ood_spacetime_vs_mosaic_s42.json"
 
-echo "DONE: SpaceTimeSigLIP + Perceiver-64 passed all configured gates."
+echo "DONE: SpaceTimeViT + Perceiver-64 passed all configured gates."
