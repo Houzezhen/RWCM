@@ -389,10 +389,7 @@ def validate_train_config(config: TrainConfig) -> None:
         if (
             config.data.history_mosaic
             and config.data.history_frames
-            and not (
-                config.model.use_spacetime_perceiver
-                and config.model.spacetime_teacher_enabled
-            )
+            and not config.model.use_spacetime_perceiver
         ):
             raise ValueError("history_mosaic and history_frames are mutually exclusive.")
     elif config.data.history_mosaic:
