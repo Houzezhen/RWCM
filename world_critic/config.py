@@ -762,12 +762,20 @@ def validate_train_config(config: TrainConfig) -> None:
     ):
         if getattr(config.loss, name) < 0:
             raise ValueError(f"loss.{name} cannot be negative.")
-    if config.loss.value_weight <= 0:
+    value_optional_stages = {"spacetime_align"}
+    if config.loss.value_weight <= 0 and config.training_stage not in value_optional_stages:
         raise ValueError(
-            "loss.value_weight must be positive: the requested World Critic always trains a value head."
+            f"loss.value_weight must be positive during {config.training_stage}."
         )
-    if config.loss.next_state_weight <= 0:
-        raise ValueError("next_state_weight must be positive to retain the requested world-model auxiliary task.")
+    dynamics_optional_stages = {"spacetime_align", "spacetime_gate"}
+    if (
+        config.loss.next_state_weight <= 0
+        and config.training_stage not in dynamics_optional_stages
+    ):
+        raise ValueError(
+            f"loss.next_state_weight must be positive during {config.training_stage} "
+            "to retain the world-model auxiliary task."
+        )
     if config.model.predict_state_vector and config.loss.next_state_vector_weight <= 0:
         raise ValueError(
             "predict_state_vector=true requires a positive next_state_vector_weight; "

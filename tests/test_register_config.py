@@ -5,6 +5,7 @@ from world_critic.config import (
     DataConfig,
     TrainConfig,
     apply_runtime_overrides,
+    load_config,
     validate_train_config,
 )
 from world_critic.training import config_from_checkpoint_payload
@@ -173,6 +174,27 @@ class RegisterConfigValidationTest(unittest.TestCase):
 
         self.assertEqual(config.data.history_offsets, [0, 4, 8, 12, 16, 20, 24, 28])
         self.assertEqual(config.model.spacetime_frame_count, 8)
+
+    def test_shipped_spacetime_stage_configs_are_valid(self):
+        for stage in ("align", "gate", "joint", "full"):
+            with self.subTest(stage=stage):
+                config = load_config(f"configs/wcm_spacetime_{stage}.yaml")
+                validate_train_config(config)
+
+    def test_only_alignment_stage_may_disable_value_loss(self):
+        config = load_config("configs/wcm_spacetime_align.yaml")
+        config.training_stage = "spacetime_gate"
+        config.alignment_plateau_patience_steps = 0
+
+        with self.assertRaisesRegex(ValueError, "value_weight must be positive"):
+            validate_train_config(config)
+
+    def test_only_pre_head_stages_may_disable_dynamics_loss(self):
+        config = load_config("configs/wcm_spacetime_gate.yaml")
+        config.training_stage = "spacetime_joint"
+
+        with self.assertRaisesRegex(ValueError, "next_state_weight must be positive"):
+            validate_train_config(config)
 
 
 if __name__ == "__main__":
