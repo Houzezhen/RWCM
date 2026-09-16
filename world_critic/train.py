@@ -359,7 +359,13 @@ def run() -> None:
             allowed_missing = {
                 key
                 for key in missing
-                if key.startswith(("temporal_adapter.", "sparse_memory_encoder."))
+                if key.startswith(
+                    (
+                        "temporal_adapter.",
+                        "sparse_memory_encoder.",
+                        "mosaic_temporal_residual.",
+                    )
+                )
             }
             allowed_unexpected = {
                 key
@@ -474,6 +480,18 @@ def run() -> None:
                                     ),
                                     "sparse_memory_readout_scale": float(
                                         sparse_memory.readout_layerscale.detach()
+                                    ),
+                                    "lr_groups": scheduler.get_last_lr(),
+                                }
+                            )
+                        mosaic_residual = getattr(
+                            unwrap_model(model), "mosaic_temporal_residual", None
+                        )
+                        if mosaic_residual is not None:
+                            printable.update(
+                                {
+                                    "mosaic_temporal_residual_gate": float(
+                                        mosaic_residual.residual_gate.detach()
                                     ),
                                     "lr_groups": scheduler.get_last_lr(),
                                 }

@@ -191,6 +191,9 @@ def load_training_checkpoint(
                 "sparse_memory_heads": 8,
                 "sparse_memory_mlp_ratio": 2.0,
                 "sparse_memory_layerscale_init": 1.0e-3,
+                "use_mosaic_temporal_residual": False,
+                "mosaic_temporal_heads": 4,
+                "mosaic_temporal_mlp_ratio": 2.0,
             }
             if any(key not in saved["model"] for key in model_defaults):
                 saved = dict(saved)

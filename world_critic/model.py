@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 from dataclasses import dataclass
 
 import torch
@@ -701,6 +702,82 @@ class SparseCrossFrameEncoder(nn.Module):
         return self.output_norm(query[:, 0]).view(batch, views, dim)
 
 
+class MosaicTemporalResidual(nn.Module):
+    """Zero-gated temporal correction from the four quadrants of a mosaic."""
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        dim = config.latent_dim
+        self.time_embedding = nn.Parameter(torch.zeros(1, 1, 4, dim))
+        self.attention_norm = nn.LayerNorm(dim)
+        self.attention = nn.MultiheadAttention(
+            dim,
+            config.mosaic_temporal_heads,
+            dropout=0.0,
+            batch_first=True,
+        )
+        self.ffn_norm = nn.LayerNorm(dim)
+        self.ffn = MLP(
+            dim,
+            int(dim * config.mosaic_temporal_mlp_ratio),
+            dim,
+            0.0,
+        )
+        self.output_norm = nn.LayerNorm(dim)
+        self.residual_gate = nn.Parameter(torch.zeros(()))
+        nn.init.normal_(self.time_embedding, std=0.02)
+
+    @staticmethod
+    def quadrant_slots(tokens: torch.Tensor) -> torch.Tensor:
+        """Pool projected ViT patches into TL, TR, BL, BR temporal slots."""
+        if tokens.ndim != 4:
+            raise ValueError(f"Mosaic tokens must be [B,V,N,D], got {tokens.shape}")
+        patches = tokens[:, :, 1:]
+        grid_size = math.isqrt(patches.size(2))
+        if grid_size * grid_size != patches.size(2) or grid_size % 2:
+            raise ValueError(
+                "Mosaic temporal residual requires an even square ViT patch grid; "
+                f"got {patches.size(2)} patch tokens."
+            )
+        grid = patches.view(
+            patches.size(0), patches.size(1), grid_size, grid_size, patches.size(-1)
+        )
+        half = grid_size // 2
+        return torch.stack(
+            [
+                grid[:, :, :half, :half].mean(dim=(2, 3)),
+                grid[:, :, :half, half:].mean(dim=(2, 3)),
+                grid[:, :, half:, :half].mean(dim=(2, 3)),
+                grid[:, :, half:, half:].mean(dim=(2, 3)),
+            ],
+            dim=2,
+        )
+
+    def forward(self, anchor: torch.Tensor, tokens: torch.Tensor) -> torch.Tensor:
+        if anchor.ndim != 3:
+            raise ValueError(f"Mosaic anchor must be [B,V,D], got {anchor.shape}")
+        # Mosaic layout is [current, -20, -40, -60]; attention runs oldest to
+        # current so the final query has access only to the current and past.
+        slots = self.quadrant_slots(tokens).flip(2) + self.time_embedding
+        batch, views, frames, dim = slots.shape
+        sequence = slots.reshape(batch * views, frames, dim)
+        frame_ids = torch.arange(frames, device=tokens.device)
+        causal_mask = frame_ids.unsqueeze(0) > frame_ids.unsqueeze(1)
+        normalized = self.attention_norm(sequence)
+        attended, _ = self.attention(
+            normalized,
+            normalized,
+            normalized,
+            attn_mask=causal_mask,
+            need_weights=False,
+        )
+        updated = sequence + attended
+        updated = updated + self.ffn(self.ffn_norm(updated))
+        delta = self.output_norm(updated[:, -1] - sequence[:, -1])
+        delta = delta.view(batch, views, dim)
+        return anchor + torch.tanh(self.residual_gate) * delta
+
+
 class LanguageEncoder(nn.Module):
     """CLIP text tower plus a learned adapter into the World Critic latent space."""
 
@@ -1209,6 +1286,9 @@ class WorldCriticModel(nn.Module):
         self.cross_frame_encoder = (
             SparseCrossFrameEncoder(config) if config.use_cross_frame_tokens else None
         )
+        self.mosaic_temporal_residual = (
+            MosaicTemporalResidual(config) if config.use_mosaic_temporal_residual else None
+        )
 
     def pool_views(self, view_latents: torch.Tensor) -> torch.Tensor:
         batch, time, views, dim = view_latents.shape
@@ -1312,7 +1392,18 @@ class WorldCriticModel(nn.Module):
         else:
             if history_images is not None:
                 raise ValueError("history_images were provided to a model without cross-frame fusion.")
-            view_latents = self.vision_encoder(images)
+            if self.mosaic_temporal_residual is None:
+                view_latents = self.vision_encoder(images)
+            else:
+                tokens = self.vision_encoder.encode_tokens(images)
+                views = tokens.size(2)
+                view_latents = tokens[:, :, :, 0] + self.vision_encoder.camera_embedding[
+                    :, :, :views
+                ]
+                current_views = self.mosaic_temporal_residual(
+                    view_latents[:, 0], tokens[:, 0]
+                )
+                view_latents = torch.cat([current_views.unsqueeze(1), view_latents[:, 1:]], dim=1)
             state_latents = self.pool_views(view_latents)
         if self.proprioception_encoder is not None:
             if state_vectors is None:

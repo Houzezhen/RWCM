@@ -6,12 +6,45 @@ from world_critic.config import ModelConfig
 from world_critic.data import _make_temporal_mosaic
 from world_critic.model import (
     CausalPatchTemporalAdapter,
+    MosaicTemporalResidual,
     SparseCrossFrameEncoder,
     SparseTemporalMemoryEncoder,
 )
 
 
 class TemporalInputTest(unittest.TestCase):
+    def mosaic_residual(self):
+        return MosaicTemporalResidual(
+            ModelConfig(
+                latent_dim=16,
+                trunk_heads=4,
+                dropout=0.0,
+                mosaic_temporal_heads=4,
+                mosaic_temporal_mlp_ratio=2.0,
+            )
+        )
+
+    def test_mosaic_temporal_residual_warm_start_is_identity(self):
+        residual = self.mosaic_residual().eval()
+        anchor = torch.randn(2, 2, 16)
+        tokens = torch.randn(2, 2, 17, 16)
+
+        output = residual(anchor, tokens)
+
+        self.assertTrue(torch.equal(output, anchor))
+
+    def test_mosaic_temporal_residual_reads_historical_quadrants(self):
+        residual = self.mosaic_residual().eval()
+        residual.residual_gate.data.fill_(1.0)
+        anchor = torch.randn(2, 2, 16)
+        tokens = torch.randn(2, 2, 17, 16, requires_grad=True)
+
+        residual(anchor, tokens).square().mean().backward()
+
+        # In a 4x4 patch grid, the bottom-right quadrant is the oldest frame.
+        patch_grad = tokens.grad[:, :, 1:].view(2, 2, 4, 4, 16)
+        self.assertGreater(float(patch_grad[:, :, 2:, 2:].abs().sum()), 0.0)
+
     def test_mosaic_layout_is_current_then_older_frames(self):
         frames = [
             torch.full((2, 3, 1), value, dtype=torch.uint8)

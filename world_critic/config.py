@@ -115,6 +115,12 @@ class ModelConfig:
     sparse_memory_heads: int = 8
     sparse_memory_mlp_ratio: float = 2.0
     sparse_memory_layerscale_init: float = 1.0e-3
+    # Lightweight residual reasoning over the four temporal quadrants of an
+    # S4-Image mosaic. The zero-initialized gate preserves the Image-B4 model
+    # exactly at warm-start while the adapter learns an incremental correction.
+    use_mosaic_temporal_residual: bool = False
+    mosaic_temporal_heads: int = 4
+    mosaic_temporal_mlp_ratio: float = 2.0
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
     # 通过交叉注意力从历史帧 token 中吸收时序不变信息再注回各时间步。
     # 与 vision.num_register_tokens（空间 register，ViT 内部）相互独立，可分别消融。
@@ -377,6 +383,16 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("use_proprioception=true requires data.state_key.")
     if config.model.proprioception_dim is not None and config.model.proprioception_dim < 1:
         raise ValueError("model.proprioception_dim must be positive when set.")
+    temporal_fusion_count = sum(
+        (
+            config.model.use_cross_frame_tokens,
+            config.model.use_temporal_transformer,
+            config.model.use_sparse_temporal_memory,
+            config.model.use_mosaic_temporal_residual,
+        )
+    )
+    if temporal_fusion_count > 1:
+        raise ValueError("temporal fusion implementations are mutually exclusive.")
     if config.model.use_cross_frame_tokens:
         if not config.data.history_frames:
             raise ValueError("use_cross_frame_tokens=true requires data.history_frames=true.")
@@ -412,6 +428,21 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError(
                 "Sparse temporal memory does not support vision register tokens in its first ablation."
             )
+    if config.model.use_mosaic_temporal_residual:
+        if not config.data.history_mosaic:
+            raise ValueError(
+                "use_mosaic_temporal_residual=true requires data.history_mosaic=true."
+            )
+        if config.data.history_offsets is None or len(config.data.history_offsets) != 4:
+            raise ValueError(
+                "Mosaic temporal residual requires exactly four history_offsets."
+            )
+        if (
+            config.model.use_cross_frame_tokens
+            or config.model.use_temporal_transformer
+            or config.model.use_sparse_temporal_memory
+        ):
+            raise ValueError("temporal fusion implementations are mutually exclusive.")
     if config.model.cross_frame_count < 1 or config.model.cross_frame_layers < 1:
         raise ValueError("cross_frame_count and cross_frame_layers must be positive.")
     if config.data.history_size > config.model.max_history:
@@ -430,6 +461,12 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("model.language.fusion_heads must be positive.")
     if config.model.temporal_transformer_count < 1:
         raise ValueError("model.temporal_transformer_count must be positive.")
+    if config.model.mosaic_temporal_heads < 1:
+        raise ValueError("model.mosaic_temporal_heads must be positive.")
+    if config.model.latent_dim % config.model.mosaic_temporal_heads != 0:
+        raise ValueError("model.latent_dim must be divisible by mosaic_temporal_heads.")
+    if config.model.mosaic_temporal_mlp_ratio <= 0:
+        raise ValueError("model.mosaic_temporal_mlp_ratio must be positive.")
     if config.model.temporal_transformer_layers < 1:
         raise ValueError("model.temporal_transformer_layers must be positive.")
     if config.model.temporal_transformer_heads < 1:

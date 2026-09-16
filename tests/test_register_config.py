@@ -107,6 +107,21 @@ class RegisterConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mutually exclusive"):
             validate_train_config(config)
 
+    def test_mosaic_temporal_residual_requires_four_frame_mosaic(self):
+        config = self.config()
+        config.data.history_size = 1
+        config.data.history_offsets = [0, 20, 40, 60]
+        config.model.use_mosaic_temporal_residual = True
+        with self.assertRaisesRegex(ValueError, "history_mosaic=true"):
+            validate_train_config(config)
+
+        config.data.history_mosaic = True
+        validate_train_config(config)
+
+        config.model.use_cross_frame_tokens = True
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            validate_train_config(config)
+
 
 if __name__ == "__main__":
     unittest.main()

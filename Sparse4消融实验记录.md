@@ -508,3 +508,30 @@ OOD Pearson（两 seed）：
 | SparseMemory scratch（§11.9） | 0.655 | 0.802 | 否决，两 seed 撕裂 |
 
 结论：全分辨率 patch-token 路线三次尝试（VGGT cross-attention → temporal transformer warm-start → SparseMemory scratch）均未超过输入级 mosaic。接受 §11.7 的最终结论：当前监督信号只足以稳定利用输入级 mosaic 跨帧历史，停止增加时序模块复杂度，冻结 S4-Image（mosaic）为视觉输入方案，后续转向 return/risk/Q 监督与下游策略收益验证。
+
+## 12. Mosaic Temporal Residual：锚定强基线的增量实验
+
+### 12.1 动机与结构
+
+本实验不再恢复已否决的 full patch-token/register 路线。它直接复用 Image-B4 的单次 mosaic ViT forward：将最终 `14×14` patch grid 按 mosaic 四象限池化为 `[t-60,t-40,t-20,t]` 四个时间槽，仅在 `384D` WCM latent 空间运行一层 causal self-attention 和 MLP。当前视图表示为：
+
+```text
+z_current = z_image_b4 + tanh(alpha) * temporal_residual(quadrant_tokens)
+```
+
+`alpha` 严格初始化为 0，因此加载 Image-B4 `deploy.pt` 后，首个 forward 与原模型完全一致；新增分支约 1.2M 参数，使用 `10×` 学习率。历史分支不增加 ViT forward 次数，也不向预训练 ViT 内插入随机 token。
+
+### 12.2 严格 continuation 对照
+
+候选和对照分别从相同 seed 的 Image-B4 `deploy.pt` warm-start，并都继续训练 5 轮：
+
+- continuation control：不增加结构，用于扣除额外训练轮数的收益；
+- mosaic residual：唯一变量为零门控 temporal residual。
+
+配置：
+
+- `configs/wcm_mosaic_continue_s{3072,42}.yaml`
+- `configs/wcm_mosaic_residual_s{3072,42}.yaml`
+- `27_run_mosaic_residual_pair.sh`
+
+主判定必须比较 residual vs continuation，而不是只比较 residual vs 原始 Image-B4。晋级要求：两个 seed 的 OOD MSE 或 centered MSE 同向改善、paired 95% CI 至少一个明确排除 0，且 OOD Pearson 不系统性下降。若只超过原始 Image-B4、但不超过 continuation，则收益归因于额外微调，不归因于结构。

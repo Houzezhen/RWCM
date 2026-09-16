@@ -118,7 +118,9 @@ def create_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim
     for name, parameter in model.named_parameters():
         if not parameter.requires_grad:
             continue
-        if name.startswith(("temporal_adapter.", "sparse_memory_encoder.")):
+        if name.startswith(
+            ("temporal_adapter.", "sparse_memory_encoder.", "mosaic_temporal_residual.")
+        ):
             temporal.append(parameter)
         elif (
             "register_tokens" in name
