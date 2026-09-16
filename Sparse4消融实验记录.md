@@ -1,6 +1,6 @@
 # Sparse4 跨帧输入消融记录
 
-更新：2026-09-15
+更新：2026-09-16
 
 ## 1. 已完成的 Full Sparse4 结果
 
@@ -478,3 +478,33 @@ SparseMemory 的强基线仍是相同 batch/seed 的 Image-B4，而不是原始 
 - `26_run_sparse_memory_scratch_pair.sh`
 
 scratch 配置没有 `init_from`，因此从预训练 ViT/CLIP 和随机初始化的 WCM/memory 模块开始；输出目录使用 `wcm_sparse_memory_scratch_s*`。脚本检测到同名输出目录会直接中止，防止把旧的 `metrics.jsonl` 或 checkpoint 混入新实验。
+
+### 11.9 SparseMemory scratch 结果：未过门禁
+
+`outputs/eval_sparse_memory_scratch_pair/comparisons/*_memory_scratch_vs_image_b4_*.json`（共同 endpoint，5cut 145 集 28017 点 / OOD 125 集 22082 点，无丢弃，bootstrap seed 与模型 seed 一致）：
+
+| 数据集 | seed | Image-B4 MSE | memory-scratch MSE | 相对变化 | MSE 差 95% CI | Image-B4 Pearson | memory Pearson | Pearson 差 95% CI |
+|---|---:|---:|---:|---:|---|---:|---:|---|
+| 5cut | 3072 | 0.011045 | 0.011841 | +7.2% | `[-0.00017, +0.00184]` 跨 0 | 0.858099 | 0.842955 | `[-0.03126, +0.00008]` 跨 0 |
+| 5cut | 42 | 0.011294 | 0.012038 | +6.6% | `[-0.00074, +0.00238]` 跨 0 | 0.858204 | 0.825637 | `[-0.04995, -0.01634]` 更差 |
+| OOD | 3072 | 0.045589 | 0.079970 | +75.4% | `[+0.03116, +0.03761]` 更差 | 0.850513 | 0.654614 | `[-0.22131, -0.17203]` 更差 |
+| OOD | 42 | 0.053365 | 0.046920 | -12.1% | `[-0.00984, -0.00302]` 更好 | 0.836089 | 0.802188 | `[-0.05060, -0.01790]` 更差 |
+
+逐条对照 §11.7 门禁：
+
+1. OOD MSE CI 上界 `<0`：只有 s42 满足，s3072 反向大幅劣化（+75.4%）——两 seed 方向相反，违反第 3 条。
+2. OOD Pearson 四组全部为负，三组 CI 明确排除 0——系统性下降，违反第 2 条。
+3. s42 的 MSE 收益伴随 bias 从 -0.183 收窄到 -0.132，更像校准偏移碰巧变小（违反第 4 条的精神），不构成表示收益。
+
+### 11.10 patch-token 路线三次尝试总结
+
+OOD Pearson（两 seed）：
+
+| 结构 | s3072 | s42 | 判定 |
+|---|---:|---:|---|
+| Image-B4（mosaic 对照） | 0.851 | 0.836 | 强 baseline |
+| Sparse-VGGT cross-attention（§9） | 0.783 | 0.774 | 否决 |
+| temporal warm-start（§10，s3072 第 5 轮预检） | 0.807 | — | 倾向否决 |
+| SparseMemory scratch（§11.9） | 0.655 | 0.802 | 否决，两 seed 撕裂 |
+
+结论：全分辨率 patch-token 路线三次尝试（VGGT cross-attention → temporal transformer warm-start → SparseMemory scratch）均未超过输入级 mosaic。接受 §11.7 的最终结论：当前监督信号只足以稳定利用输入级 mosaic 跨帧历史，停止增加时序模块复杂度，冻结 S4-Image（mosaic）为视觉输入方案，后续转向 return/risk/Q 监督与下游策略收益验证。
