@@ -20,8 +20,8 @@ case "$VARIANT" in
   t8)
     FRAME_COUNT=8
     HISTORY_OFFSETS="0,9,17,26,34,43,51,60"
-    DEFAULT_TRAIN_BATCH=2
-    DEFAULT_EVAL_BATCH=2
+    DEFAULT_TRAIN_BATCH=4
+    DEFAULT_EVAL_BATCH=4
     ;;
   t16)
     FRAME_COUNT=16
@@ -75,6 +75,7 @@ train_run() {
       2>&1 | tee "outputs/batch_logs/$(basename "$output").log"
   else
     env WCM_SEED="$seed" WCM_OUTPUT_DIR="$output" \
+      WCM_PER_DEVICE_BATCH_SIZE="$TRAIN_BATCH" WCM_EVAL_BATCH_SIZE="$EVAL_BATCH" \
       "$PYTHON" -u -m world_critic.train --config "$config" \
       2>&1 | tee "outputs/batch_logs/$(basename "$output").log"
   fi
