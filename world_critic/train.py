@@ -48,12 +48,14 @@ from .model import SIGReg
 from .training import (
     autocast_context,
     build_model,
+    configure_training_stage,
     compute_losses,
     create_optimizer,
     create_scheduler,
     evaluate_loader,
     move_batch_to_device,
     seed_everything,
+    update_spacetime_gate,
     wrap_ddp,
 )
 
@@ -311,10 +313,12 @@ def run() -> None:
         assert train_loader is not None
 
         model = None
+        stage_info = None
 
         def prepare_model() -> None:
-            nonlocal model
+            nonlocal model, stage_info
             model = build_model(config).to(ctx.device)
+            stage_info = configure_training_stage(model, config)
             if config.compile:
                 model = torch.compile(model)
 
@@ -329,6 +333,7 @@ def run() -> None:
                     {
                         "model_parameters": total_parameters,
                         "trainable_parameters": trainable_parameters,
+                        "training_stage": stage_info,
                     }
                 )
             )
@@ -350,7 +355,7 @@ def run() -> None:
 
         start_epoch = 0
         global_step = 0
-        best_metric = math.inf
+        best_metric = math.inf if config.selection_mode == "min" else -math.inf
         if config.init_from:
             payload = load_checkpoint_payload(config.init_from, ctx)
             missing, unexpected = unwrap_model(model).load_state_dict(
@@ -364,6 +369,10 @@ def run() -> None:
                         "temporal_adapter.",
                         "sparse_memory_encoder.",
                         "mosaic_temporal_residual.",
+                        "spacetime_encoder.",
+                        "risk_head.",
+                        "q_action_encoder.",
+                        "q_head.",
                     )
                 )
             }
@@ -403,6 +412,10 @@ def run() -> None:
             best_metric = float(checkpoint["best_metric"])
 
         optimizer.zero_grad(set_to_none=True)
+        total_training_steps = max(
+            1,
+            math.ceil(len(train_loader) / config.gradient_accumulation_steps) * config.epochs,
+        )
         for epoch in range(start_epoch, config.epochs):
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
@@ -415,6 +428,9 @@ def run() -> None:
                 dynamic_ncols=True,
             )
             for batch_index, batch in enumerate(progress):
+                current_gate = update_spacetime_gate(
+                    model, config, global_step, total_training_steps
+                )
                 batch = move_batch_to_device(batch, ctx.device)
                 accumulation_index = batch_index % config.gradient_accumulation_steps
                 sync_step = (
@@ -465,6 +481,8 @@ def run() -> None:
                                 if key.endswith("loss") and key != "loss"
                             },
                         }
+                        if current_gate is not None:
+                            printable["spacetime_gate"] = current_gate
                         sparse_memory = getattr(
                             unwrap_model(model), "sparse_memory_encoder", None
                         )
@@ -516,17 +534,28 @@ def run() -> None:
                 if ctx.distributed:
                     decision = None
                     if ctx.is_main:
-                        is_best = metrics["value_mse"] < best_metric
+                        candidate_metric = float(metrics[config.selection_metric])
+                        is_best = (
+                            candidate_metric < best_metric
+                            if config.selection_mode == "min"
+                            else candidate_metric > best_metric
+                        )
                         decision = {
                             "is_best": bool(is_best),
-                            "best_metric": min(best_metric, metrics["value_mse"]),
+                            "best_metric": candidate_metric if is_best else best_metric,
                         }
                     decision = broadcast_object(decision, ctx)
                     is_best = bool(decision["is_best"])
                     best_metric = float(decision["best_metric"])
                 else:
-                    is_best = metrics["value_mse"] < best_metric
-                    best_metric = min(best_metric, metrics["value_mse"])
+                    candidate_metric = float(metrics[config.selection_metric])
+                    is_best = (
+                        candidate_metric < best_metric
+                        if config.selection_mode == "min"
+                        else candidate_metric > best_metric
+                    )
+                    if is_best:
+                        best_metric = candidate_metric
                 def write_validation_metrics() -> None:
                     if ctx.is_main:
                         print(json.dumps({"epoch": epoch, "validation": metrics}, indent=2))
@@ -575,6 +604,21 @@ def run() -> None:
             if ctx.is_main:
                 print(f"epoch={epoch} elapsed_s={time.monotonic() - epoch_started:.1f}")
 
+        if config.deploy_from_best:
+            best_payload = load_checkpoint_payload(
+                output_dir / "checkpoints" / "best.pt", ctx
+            )
+            unwrap_model(model).load_state_dict(best_payload["model"], strict=True)
+            if ctx.is_main:
+                print(
+                    json.dumps(
+                        {
+                            "deploy_source": "best.pt",
+                            "selection_metric": config.selection_metric,
+                            "best_metric": best_metric,
+                        }
+                    )
+                )
         save_deploy_bundle(output_dir / "deploy.pt", model, config, ctx)
     finally:
         cleanup_distributed(ctx)

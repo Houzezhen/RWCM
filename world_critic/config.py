@@ -20,6 +20,7 @@ class DataConfig:
     action_key: str = "action"
     state_key: str | None = "observation.state"
     return_key: str = "return"
+    success_key: str | None = None
     history_size: int = 3
     # Optional sparse observation history for endpoint scoring.  When set,
     # offsets are ordered [0, older, ...] in frame-index units and the regular
@@ -121,6 +122,19 @@ class ModelConfig:
     use_mosaic_temporal_residual: bool = False
     mosaic_temporal_heads: int = 4
     mosaic_temporal_mlp_ratio: float = 2.0
+    # Raw history frames are encoded by a shared SigLIP, mixed along time,
+    # then compressed to a fixed visual-token budget by a Perceiver reducer.
+    use_spacetime_perceiver: bool = False
+    spacetime_frame_count: int = 4
+    spacetime_layers: int = 2
+    spacetime_heads: int = 8
+    perceiver_queries: int = 64
+    perceiver_layers: int = 2
+    perceiver_mlp_ratio: float = 2.0
+    spacetime_teacher_enabled: bool = False
+    spacetime_temporal_enabled: bool = True
+    predict_risk: bool = False
+    predict_q: bool = False
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
     # 通过交叉注意力从历史帧 token 中吸收时序不变信息再注回各时间步。
     # 与 vision.num_register_tokens（空间 register，ViT 内部）相互独立，可分别消融。
@@ -156,6 +170,10 @@ class LossConfig:
     sigreg_weight: float = 0.01
     sigreg_knots: int = 17
     sigreg_num_projections: int = 1024
+    alignment_weight: float = 0.0
+    alignment_mse_weight: float = 0.1
+    risk_weight: float = 0.0
+    q_weight: float = 0.0
 
 
 @dataclass
@@ -196,6 +214,13 @@ class TrainConfig:
     expected_world_size: int | None = None
     ddp_timeout_minutes: int = 30
     deterministic: bool = False
+    training_stage: str = "standard"
+    gate_start: float = 0.0
+    gate_end: float = 0.0
+    unfreeze_vision_top_layers: int = 4
+    selection_metric: str = "value_mse"
+    selection_mode: str = "min"
+    deploy_from_best: bool = False
     data: DataConfig | None = None
     model: ModelConfig = field(default_factory=ModelConfig)
     loss: LossConfig = field(default_factory=LossConfig)
@@ -292,6 +317,8 @@ def apply_runtime_overrides(config: TrainConfig) -> TrainConfig:
     per_device_batch_size = integer("WCM_PER_DEVICE_BATCH_SIZE")
     eval_batch_size = integer("WCM_EVAL_BATCH_SIZE")
     epochs = integer("WCM_EPOCHS")
+    seed = integer("WCM_SEED")
+    init_from = value("WCM_INIT_FROM")
     resume = value("WCM_RESUME")
     precision = value("WCM_PRECISION")
 
@@ -317,6 +344,10 @@ def apply_runtime_overrides(config: TrainConfig) -> TrainConfig:
         config.eval_batch_size = eval_batch_size
     if epochs is not None:
         config.epochs = epochs
+    if seed is not None:
+        config.seed = seed
+    if init_from is not None:
+        config.init_from = init_from
     if resume is not None:
         config.resume = resume
     if precision is not None:
@@ -355,7 +386,14 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError("data.history_size must be 1 when data.history_offsets is configured.")
         if config.data.history_mosaic and len(offsets) != 4:
             raise ValueError("data.history_mosaic requires exactly four history_offsets.")
-        if config.data.history_mosaic and config.data.history_frames:
+        if (
+            config.data.history_mosaic
+            and config.data.history_frames
+            and not (
+                config.model.use_spacetime_perceiver
+                and config.model.spacetime_teacher_enabled
+            )
+        ):
             raise ValueError("history_mosaic and history_frames are mutually exclusive.")
     elif config.data.history_mosaic:
         raise ValueError("data.history_mosaic requires data.history_offsets.")
@@ -389,6 +427,7 @@ def validate_train_config(config: TrainConfig) -> None:
             config.model.use_temporal_transformer,
             config.model.use_sparse_temporal_memory,
             config.model.use_mosaic_temporal_residual,
+            config.model.use_spacetime_perceiver,
         )
     )
     if temporal_fusion_count > 1:
@@ -443,6 +482,31 @@ def validate_train_config(config: TrainConfig) -> None:
             or config.model.use_sparse_temporal_memory
         ):
             raise ValueError("temporal fusion implementations are mutually exclusive.")
+    if config.model.use_spacetime_perceiver:
+        if not config.data.history_frames:
+            raise ValueError("use_spacetime_perceiver=true requires data.history_frames=true.")
+        if config.data.history_offsets is None:
+            raise ValueError("use_spacetime_perceiver=true requires data.history_offsets.")
+        if config.model.spacetime_frame_count != len(config.data.history_offsets):
+            raise ValueError(
+                "spacetime_frame_count must match the number of history_offsets."
+            )
+        if config.model.spacetime_teacher_enabled and not config.data.history_mosaic:
+            raise ValueError(
+                "spacetime_teacher_enabled=true requires data.history_mosaic=true."
+            )
+        if not config.model.spacetime_teacher_enabled and config.data.history_mosaic:
+            raise ValueError(
+                "history_mosaic must be false when the SpaceTime teacher is disabled."
+            )
+        if "siglip" not in config.model.vision.model_name.lower():
+            raise ValueError("SpaceTime Perceiver requires a SigLIP vision checkpoint.")
+        if config.model.predict_risk and config.data.success_key is None:
+            raise ValueError("predict_risk=true requires data.success_key.")
+        if config.loss.risk_weight > 0 and not config.model.predict_risk:
+            raise ValueError("loss.risk_weight>0 requires model.predict_risk=true.")
+        if config.loss.q_weight > 0 and not config.model.predict_q:
+            raise ValueError("loss.q_weight>0 requires model.predict_q=true.")
     if config.model.cross_frame_count < 1 or config.model.cross_frame_layers < 1:
         raise ValueError("cross_frame_count and cross_frame_layers must be positive.")
     if config.data.history_size > config.model.max_history:
@@ -467,6 +531,17 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("model.latent_dim must be divisible by mosaic_temporal_heads.")
     if config.model.mosaic_temporal_mlp_ratio <= 0:
         raise ValueError("model.mosaic_temporal_mlp_ratio must be positive.")
+    if config.model.spacetime_frame_count < 1 or config.model.spacetime_layers < 1:
+        raise ValueError("spacetime_frame_count and spacetime_layers must be positive.")
+    if (
+        config.model.spacetime_heads < 1
+        or config.model.latent_dim % config.model.spacetime_heads != 0
+    ):
+        raise ValueError("latent_dim must be divisible by positive spacetime_heads.")
+    if config.model.perceiver_queries not in (64, 128):
+        raise ValueError("perceiver_queries must be 64 or 128.")
+    if config.model.perceiver_layers < 1 or config.model.perceiver_mlp_ratio <= 0:
+        raise ValueError("perceiver_layers and perceiver_mlp_ratio must be positive.")
     if config.model.temporal_transformer_layers < 1:
         raise ValueError("model.temporal_transformer_layers must be positive.")
     if config.model.temporal_transformer_heads < 1:
@@ -493,6 +568,33 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("model.sparse_memory_layerscale_init must be positive.")
     if config.model.dynamics_depth < 1:
         raise ValueError("model.dynamics_depth must be positive so dynamics remains action-conditioned.")
+    valid_stages = {
+        "standard",
+        "spacetime_align",
+        "spacetime_gate",
+        "spacetime_joint",
+        "spacetime_full",
+    }
+    if config.training_stage not in valid_stages:
+        raise ValueError(f"training_stage must be one of {sorted(valid_stages)}.")
+    if config.training_stage != "standard" and not config.model.use_spacetime_perceiver:
+        raise ValueError("SpaceTime training stages require use_spacetime_perceiver=true.")
+    if not 0.0 <= config.gate_start <= 1.0 or not 0.0 <= config.gate_end <= 1.0:
+        raise ValueError("gate_start and gate_end must be in [0,1].")
+    if config.unfreeze_vision_top_layers < 0:
+        raise ValueError("unfreeze_vision_top_layers cannot be negative.")
+    if config.selection_mode not in {"min", "max"}:
+        raise ValueError("selection_mode must be 'min' or 'max'.")
+    if any(
+        weight < 0
+        for weight in (
+            config.loss.alignment_weight,
+            config.loss.alignment_mse_weight,
+            config.loss.risk_weight,
+            config.loss.q_weight,
+        )
+    ):
+        raise ValueError("alignment/risk/q loss weights cannot be negative.")
     if not (0.0 <= config.data.val_fraction < 1.0):
         raise ValueError("data.val_fraction must be in [0, 1).")
     if config.data.normalization_epsilon <= 0:

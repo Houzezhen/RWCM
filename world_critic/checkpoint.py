@@ -194,6 +194,17 @@ def load_training_checkpoint(
                 "use_mosaic_temporal_residual": False,
                 "mosaic_temporal_heads": 4,
                 "mosaic_temporal_mlp_ratio": 2.0,
+                "use_spacetime_perceiver": False,
+                "spacetime_frame_count": 4,
+                "spacetime_layers": 2,
+                "spacetime_heads": 8,
+                "perceiver_queries": 64,
+                "perceiver_layers": 2,
+                "perceiver_mlp_ratio": 2.0,
+                "spacetime_teacher_enabled": False,
+                "spacetime_temporal_enabled": True,
+                "predict_risk": False,
+                "predict_q": False,
             }
             if any(key not in saved["model"] for key in model_defaults):
                 saved = dict(saved)
@@ -204,6 +215,7 @@ def load_training_checkpoint(
                 "history_offsets": None,
                 "history_mosaic": False,
                 "history_frames": False,
+                "success_key": None,
             }
             if any(key not in saved.get("data", {}) for key in data_defaults):
                 saved = dict(saved)
@@ -215,6 +227,10 @@ def load_training_checkpoint(
                 "ranking_weight",
                 "ranking_temperature",
                 "ranking_min_target_gap",
+                "alignment_weight",
+                "alignment_mse_weight",
+                "risk_weight",
+                "q_weight",
             )
             if any(key not in saved_loss for key in ranking_defaults):
                 # Ranking supervision was added after the original baseline
@@ -233,6 +249,7 @@ def load_training_checkpoint(
                 ("data", "action_key"),
                 ("data", "state_key"),
                 ("data", "return_key"),
+                ("data", "success_key"),
                 ("data", "history_size"),
                 ("data", "history_offsets"),
                 ("data", "history_mosaic"),

@@ -122,6 +122,23 @@ class RegisterConfigValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mutually exclusive"):
             validate_train_config(config)
 
+    def test_spacetime_teacher_allows_mosaic_and_raw_history(self):
+        config = self.config()
+        config.data.history_size = 1
+        config.data.history_offsets = [0, 20, 40, 60]
+        config.data.history_mosaic = True
+        config.data.history_frames = True
+        config.data.success_key = "episode_success"
+        config.model.vision.model_name = "google/siglip-base-patch16-224"
+        config.model.use_spacetime_perceiver = True
+        config.model.spacetime_teacher_enabled = True
+        config.model.predict_risk = True
+        validate_train_config(config)
+
+        config.model.spacetime_teacher_enabled = False
+        with self.assertRaisesRegex(ValueError, "history_mosaic must be false"):
+            validate_train_config(config)
+
 
 if __name__ == "__main__":
     unittest.main()

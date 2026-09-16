@@ -7,12 +7,57 @@ from world_critic.data import _make_temporal_mosaic
 from world_critic.model import (
     CausalPatchTemporalAdapter,
     MosaicTemporalResidual,
+    SpaceTimePerceiverEncoder,
     SparseCrossFrameEncoder,
     SparseTemporalMemoryEncoder,
 )
 
 
 class TemporalInputTest(unittest.TestCase):
+    def spacetime_encoder(self, temporal_enabled: bool = True):
+        return SpaceTimePerceiverEncoder(
+            ModelConfig(
+                latent_dim=16,
+                max_views=2,
+                spacetime_frame_count=4,
+                spacetime_layers=2,
+                spacetime_heads=4,
+                perceiver_queries=64,
+                perceiver_layers=1,
+                perceiver_mlp_ratio=2.0,
+                spacetime_temporal_enabled=temporal_enabled,
+            )
+        )
+
+    def test_spacetime_perceiver_emits_fixed_visual_tokens(self):
+        encoder = self.spacetime_encoder().eval()
+        frame_tokens = torch.randn(2, 4, 2, 9, 16)
+
+        visual_tokens, pooled = encoder(frame_tokens)
+
+        self.assertEqual(tuple(visual_tokens.shape), (2, 64, 16))
+        self.assertEqual(tuple(pooled.shape), (2, 1, 16))
+
+    def test_spacetime_perceiver_reads_oldest_history(self):
+        encoder = self.spacetime_encoder().eval()
+        frame_tokens = torch.randn(2, 4, 2, 9, 16, requires_grad=True)
+
+        _, pooled = encoder(frame_tokens)
+        pooled.square().mean().backward()
+
+        self.assertGreater(float(frame_tokens.grad[:, -1].abs().sum()), 0.0)
+
+    def test_spacetime_gate_is_bounded(self):
+        encoder = self.spacetime_encoder()
+        teacher = torch.randn(2, 1, 16)
+        student = torch.randn(2, 1, 16)
+        self.assertTrue(torch.equal(encoder.blend(teacher, student), teacher))
+        encoder.set_gate(1.0)
+        self.assertEqual(float(encoder.blend_gate), 1.0)
+        self.assertTrue(torch.equal(encoder.blend(teacher, student), student))
+        with self.assertRaisesRegex(ValueError, "must be in"):
+            encoder.set_gate(1.1)
+
     def mosaic_residual(self):
         return MosaicTemporalResidual(
             ModelConfig(

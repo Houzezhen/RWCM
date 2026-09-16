@@ -535,3 +535,34 @@ z_current = z_image_b4 + tanh(alpha) * temporal_residual(quadrant_tokens)
 - `27_run_mosaic_residual_pair.sh`
 
 主判定必须比较 residual vs continuation，而不是只比较 residual vs 原始 Image-B4。晋级要求：两个 seed 的 OOD MSE 或 centered MSE 同向改善、paired 95% CI 至少一个明确排除 0，且 OOD Pearson 不系统性下降。若只超过原始 Image-B4、但不超过 continuation，则收益归因于额外微调，不归因于结构。
+
+## 13. SpaceTimeSigLIP + Perceiver-64 主实验
+
+### 13.1 定位
+
+Mosaic 只用于证明并教授“历史视觉有效”，不是最终模型输入。主模型接收原始 `[B,T,V,C,H,W]` 历史帧：共享 SigLIP 独立编码每帧，固定空间 patch 位置沿时间做 factorized attention，再由 64 个 Perceiver query 将 `T×V×P` token 压缩为 64 个新视觉 token。以 `T=4,V=2,P=196` 计，压缩比为 `1568→64`，约 `24.5×`。
+
+### 13.2 四阶段训练
+
+1. `spacetime_align`（5 轮）：冻结全部旧模型和时空层，只训练 Perceiver、输出 projection 与 token pool；gate=0，以 mosaic SigLIP latent 为 teacher，优化 cosine + normalized MSE。
+2. `spacetime_gate`（5 轮）：只训练时空层和 Perceiver，gate 按 optimizer step 从 0 线性升到 1，同时保留较小 alignment loss 与 return/ranking 监督。
+3. `spacetime_joint`（5 轮）：关闭 mosaic teacher，gate 固定 1；解冻 SigLIP 最后 4 层、视觉 projection、language fusion/context trunk 与 value/risk/Q heads。
+4. `spacetime_full`（3 轮）：仍为 teacher-free/gate=1，以 `2e-6` 全量微调 SigLIP 与 WCM（CLIP 文本塔按既有协议继续冻结）。每阶段从验证集 best checkpoint 导出 `deploy.pt`，不再导出末轮权重。
+
+Risk target 为 `1-episode_success`；Q head 在 value 计算之后读取行为动作，以 return 为监督，保持 `V(s)` 的动作隔离。最终 checkpoint 的配置同时关闭 `history_mosaic` 与 `spacetime_teacher_enabled`，部署图只包含原始历史帧、SpaceTimeSigLIP 和 Perceiver。
+
+### 13.3 对照和门禁
+
+主对照为相同 batch/seed/split 的：
+
+- 单帧 SigLIP；
+- 四帧 mosaic SigLIP；
+- SpaceTimeSigLIP + Perceiver-64。
+
+门禁：gate=0 的 blend 逐位等于 teacher；阶段 0 validation cosine 必须 `>0.9`；最终 OOD Pearson 两个 seed 均不得低于 mosaic；两个 seed 的 MSE 方向一致；若 raw MSE 改善但 centered MSE 未改善，则 Pearson paired CI 下界必须大于 0，排除单纯 bias 收窄。
+
+配置和入口：
+
+- `configs/wcm_siglip_{single,mosaic}.yaml`
+- `configs/wcm_spacetime_{align,gate,joint,full}.yaml`
+- `28_run_spacetime_siglip_pair.sh`

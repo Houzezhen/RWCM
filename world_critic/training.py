@@ -97,6 +97,91 @@ def build_model(config: TrainConfig) -> WorldCriticModel:
     return WorldCriticModel(config.model)
 
 
+def configure_training_stage(model: torch.nn.Module, config: TrainConfig) -> dict[str, Any]:
+    """Apply the explicit SpaceTime freeze policy before optimizer creation."""
+    stage = config.training_stage
+    raw_model = unwrap_model(model)
+    if stage == "standard":
+        return {"stage": stage, "unfrozen_vision_layers": []}
+    spacetime = getattr(raw_model, "spacetime_encoder", None)
+    if spacetime is None:
+        raise ValueError(f"Training stage {stage!r} requires spacetime_encoder.")
+
+    for parameter in raw_model.parameters():
+        parameter.requires_grad_(False)
+
+    def unfreeze(module: torch.nn.Module | None) -> None:
+        if module is not None:
+            for parameter in module.parameters():
+                parameter.requires_grad_(True)
+
+    unfrozen_layers: list[int] = []
+    if stage == "spacetime_align":
+        for name, parameter in spacetime.named_parameters():
+            if name.startswith(
+                (
+                    "perceiver_queries",
+                    "perceiver_layers.",
+                    "output_projection.",
+                    "pool_query",
+                    "pool_attention.",
+                )
+            ):
+                parameter.requires_grad_(True)
+    elif stage == "spacetime_gate":
+        unfreeze(spacetime)
+    elif stage == "spacetime_joint":
+        unfreeze(spacetime)
+        unfreeze(raw_model.vision_encoder.projection)
+        layers = raw_model.vision_encoder.encoder_layers()
+        count = min(config.unfreeze_vision_top_layers, len(layers))
+        for index in range(len(layers) - count, len(layers)):
+            unfreeze(layers[index])
+            unfrozen_layers.append(index)
+        vision_root = getattr(
+            raw_model.vision_encoder.backbone,
+            "vision_model",
+            raw_model.vision_encoder.backbone,
+        )
+        unfreeze(getattr(vision_root, "post_layernorm", None))
+        unfreeze(raw_model.language_fusion)
+        unfreeze(raw_model.context_trunk)
+        unfreeze(raw_model.value_head)
+        unfreeze(raw_model.risk_head)
+        unfreeze(raw_model.q_action_encoder)
+        unfreeze(raw_model.q_head)
+    elif stage == "spacetime_full":
+        for parameter in raw_model.parameters():
+            parameter.requires_grad_(True)
+        if not config.model.language.trainable:
+            raw_model.language_encoder.requires_grad_(False)
+        # Teacher-free current states come from SpaceTime tokens. These legacy
+        # view-pooling parameters only touch the detached next-state target and
+        # must stay frozen under DDP find_unused_parameters=False.
+        raw_model.vision_encoder.camera_embedding.requires_grad_(False)
+        raw_model.view_pool_query.requires_grad_(False)
+        raw_model.view_attention.requires_grad_(False)
+        unfrozen_layers = list(range(len(raw_model.vision_encoder.encoder_layers())))
+    else:
+        raise ValueError(f"Unsupported training_stage={stage!r}.")
+    return {"stage": stage, "unfrozen_vision_layers": unfrozen_layers}
+
+
+def update_spacetime_gate(
+    model: torch.nn.Module,
+    config: TrainConfig,
+    global_step: int,
+    total_steps: int,
+) -> float | None:
+    spacetime = getattr(unwrap_model(model), "spacetime_encoder", None)
+    if spacetime is None:
+        return None
+    progress = min(max(global_step / max(total_steps - 1, 1), 0.0), 1.0)
+    gate = config.gate_start + (config.gate_end - config.gate_start) * progress
+    spacetime.set_gate(float(gate))
+    return float(gate)
+
+
 def create_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim.Optimizer:
     register_lr_scale = getattr(config.optim, "register_lr_scale", 1.0)
     temporal_lr_scale = getattr(config.optim, "temporal_lr_scale", 1.0)
@@ -119,7 +204,12 @@ def create_optimizer(model: torch.nn.Module, config: TrainConfig) -> torch.optim
         if not parameter.requires_grad:
             continue
         if name.startswith(
-            ("temporal_adapter.", "sparse_memory_encoder.", "mosaic_temporal_residual.")
+            (
+                "temporal_adapter.",
+                "sparse_memory_encoder.",
+                "mosaic_temporal_residual.",
+                "spacetime_encoder.",
+            )
         ):
             temporal.append(parameter)
         elif (
@@ -304,12 +394,65 @@ def compute_losses(
         )
         sigreg_loss = sigreg(global_latent.transpose(0, 1), projections)
 
+    alignment_loss = output.context_latent.new_zeros(())
+    alignment_metric = output.context_latent.new_zeros((), dtype=torch.float64)
+    if loss_config.alignment_weight > 0:
+        if output.alignment_student is None or output.alignment_teacher is None:
+            raise ValueError("Alignment loss requires student and teacher visual latents.")
+        student = output.alignment_student.float()
+        teacher = output.alignment_teacher.detach().float()
+        cosine = 1.0 - F.cosine_similarity(student, teacher, dim=-1)
+        student_norm = F.layer_norm(student, (student.size(-1),))
+        teacher_norm = F.layer_norm(teacher, (teacher.size(-1),))
+        normalized_mse = (student_norm - teacher_norm).square().mean(dim=-1)
+        alignment_values = cosine + loss_config.alignment_mse_weight * normalized_mse
+        alignment_sum = alignment_values.sum()
+        alignment_count = torch.tensor(
+            alignment_values.numel(), device=alignment_values.device, dtype=torch.float64
+        )
+        alignment_loss, global_alignment_count = ddp_global_mean_loss(
+            alignment_sum, alignment_count, ctx
+        )
+        global_alignment_sum = alignment_sum.detach().double()
+        all_reduce_sum(global_alignment_sum, ctx)
+        alignment_metric = global_alignment_sum / global_alignment_count.clamp_min(1)
+
+    risk_loss = output.context_latent.new_zeros(())
+    risk_metric = output.context_latent.new_zeros((), dtype=torch.float64)
+    if loss_config.risk_weight > 0:
+        if output.risk_logits is None or "success_targets" not in batch:
+            raise ValueError("Risk loss requires risk_logits and success_targets.")
+        risk_targets = 1.0 - batch["success_targets"].to(output.risk_logits.dtype)
+        risk_values = F.binary_cross_entropy_with_logits(
+            output.risk_logits, risk_targets, reduction="none"
+        )
+        risk_sum = risk_values.masked_select(valid).sum()
+        risk_count = valid.sum().to(dtype=torch.float64)
+        risk_loss, global_risk_count = ddp_global_mean_loss(risk_sum, risk_count, ctx)
+        global_risk_sum = risk_sum.detach().double()
+        all_reduce_sum(global_risk_sum, ctx)
+        risk_metric = global_risk_sum / global_risk_count.clamp_min(1)
+
+    q_loss = output.context_latent.new_zeros(())
+    q_metric = output.context_latent.new_zeros((), dtype=torch.float64)
+    if loss_config.q_weight > 0:
+        if output.q_value is None:
+            raise ValueError("Q loss requires q_value output.")
+        q_sum, q_count = masked_squared_error(output.q_value, return_target, valid)
+        q_loss, global_q_count = ddp_global_mean_loss(q_sum, q_count, ctx)
+        global_q_sum = q_sum.detach().double()
+        all_reduce_sum(global_q_sum, ctx)
+        q_metric = global_q_sum / global_q_count.clamp_min(1)
+
     total = (
         loss_config.value_weight * value_loss
         + loss_config.ranking_weight * ranking_loss
         + loss_config.next_state_weight * state_loss
         + loss_config.next_state_vector_weight * vector_loss
         + loss_config.sigreg_weight * sigreg_loss
+        + loss_config.alignment_weight * alignment_loss
+        + loss_config.risk_weight * risk_loss
+        + loss_config.q_weight * q_loss
     )
     total_metric = (
         loss_config.value_weight * value_metric
@@ -317,6 +460,9 @@ def compute_losses(
         + loss_config.next_state_weight * state_metric
         + loss_config.next_state_vector_weight * vector_metric
         + loss_config.sigreg_weight * sigreg_loss.detach().double()
+        + loss_config.alignment_weight * alignment_metric
+        + loss_config.risk_weight * risk_metric
+        + loss_config.q_weight * q_metric
     )
     return total, {
         "loss": total_metric,
@@ -325,6 +471,9 @@ def compute_losses(
         "next_state_loss": state_metric,
         "next_state_vector_loss": vector_metric,
         "sigreg_loss": sigreg_loss.detach(),
+        "alignment_loss": alignment_metric,
+        "risk_loss": risk_metric,
+        "q_loss": q_metric,
         "global_value_count": global_value_count.detach(),
         "global_ranking_count": global_ranking_count.detach(),
         "global_state_count": global_state_count.detach(),
@@ -365,6 +514,9 @@ def evaluate_loader(
     token_latent_count = 0.0
     endpoint_latent_squared_error = 0.0
     endpoint_latent_count = 0.0
+    alignment_loss_sum = 0.0
+    alignment_cosine_sum = 0.0
+    alignment_count = 0.0
     curve_records: list[dict[str, Any]] = []
     processed_curve_samples = 0
     local_error: str | None = None
@@ -450,6 +602,19 @@ def evaluate_loader(
                 endpoint_returns,
                 torch.ones_like(endpoint_values, dtype=torch.bool),
             )
+            if output.alignment_student is not None and output.alignment_teacher is not None:
+                student = output.alignment_student.float()
+                teacher = output.alignment_teacher.float()
+                cosine = F.cosine_similarity(student, teacher, dim=-1)
+                student_norm = F.layer_norm(student, (student.size(-1),))
+                teacher_norm = F.layer_norm(teacher, (teacher.size(-1),))
+                normalized_mse = (student_norm - teacher_norm).square().mean(dim=-1)
+                alignment_values = (
+                    1.0 - cosine + config.loss.alignment_mse_weight * normalized_mse
+                )
+                alignment_loss_sum += alignment_values.double().sum().item()
+                alignment_cosine_sum += cosine.double().sum().item()
+                alignment_count += float(cosine.numel())
 
             mask = token_mask.expand_as(output.next_state_pred)
             if not torch.isfinite(output.next_state_pred[mask]).all() or not torch.isfinite(
@@ -592,6 +757,23 @@ def evaluate_loader(
     reduced["token_next_state_mse"] = (
         token_state_values[0].item() / token_state_values[1].item()
         if token_state_values[1].item() > 0
+        else math.nan
+    )
+    alignment_values = torch.tensor(
+        [alignment_loss_sum, alignment_cosine_sum, alignment_count],
+        dtype=torch.float64,
+        device=ctx.device,
+    )
+    if ctx.distributed:
+        dist.all_reduce(alignment_values, op=dist.ReduceOp.SUM)
+    reduced["alignment_loss"] = (
+        alignment_values[0].item() / alignment_values[2].item()
+        if alignment_values[2].item() > 0
+        else math.nan
+    )
+    reduced["alignment_cosine"] = (
+        alignment_values[1].item() / alignment_values[2].item()
+        if alignment_values[2].item() > 0
         else math.nan
     )
     reduced.update(metrics_with_curves)

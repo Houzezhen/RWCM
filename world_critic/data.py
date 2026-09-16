@@ -536,6 +536,19 @@ class LeRobotWorldCriticDataset(Dataset):
         }
         if return_targets is not None:
             batch["return_targets"] = return_targets
+        if self.config.success_key is not None:
+            success_values = []
+            for sample in current:
+                if self.config.success_key not in sample:
+                    raise KeyError(self.config.success_key)
+                value = torch.as_tensor(sample[self.config.success_key], dtype=torch.float32)
+                if value.numel() != 1:
+                    raise ValueError(
+                        f"Success field {self.config.success_key!r} must be scalar, "
+                        f"got shape {tuple(value.shape)}."
+                    )
+                success_values.append(value.reshape(1))
+            batch["success_targets"] = torch.stack(success_values)
         if state_vectors is not None:
             if not torch.isfinite(state_vectors).all():
                 raise ValueError(f"Window {int(rows[0])} contains non-finite state vectors.")
@@ -666,6 +679,13 @@ class WorldCriticCollator:
             raise ValueError("A batch mixes samples with and without return_targets.")
         if all(has_returns):
             output["return_targets"] = torch.stack([sample["return_targets"] for sample in samples])
+        has_success = ["success_targets" in sample for sample in samples]
+        if any(has_success) and not all(has_success):
+            raise ValueError("A batch mixes samples with and without success_targets.")
+        if all(has_success):
+            output["success_targets"] = torch.stack(
+                [sample["success_targets"] for sample in samples]
+            )
         has_states = ["next_state_vector" in sample for sample in samples]
         if any(has_states) and not all(has_states):
             raise ValueError("A batch mixes samples with and without next_state_vector targets.")

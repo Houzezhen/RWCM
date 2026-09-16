@@ -21,6 +21,10 @@ class WorldCriticOutput:
     target_next_state: torch.Tensor
     valid_mask: torch.Tensor
     next_state_vector_pred: torch.Tensor | None = None
+    alignment_student: torch.Tensor | None = None
+    alignment_teacher: torch.Tensor | None = None
+    risk_logits: torch.Tensor | None = None
+    q_value: torch.Tensor | None = None
 
 
 @dataclass
@@ -334,7 +338,21 @@ class VisionEncoder(nn.Module):
             raise ImportError("VisionEncoder requires transformers. Install the project dependencies.") from exc
 
         vision_config = config.vision
-        if vision_config.pretrained:
+        self.has_cls_token = "siglip" not in vision_config.model_name.lower()
+        if not self.has_cls_token:
+            try:
+                from transformers import SiglipVisionConfig, SiglipVisionModel
+            except ImportError as exc:
+                raise ImportError(
+                    "SigLIP vision models require a Transformers build with SiglipVisionModel."
+                ) from exc
+            if vision_config.pretrained:
+                self.backbone = SiglipVisionModel.from_pretrained(vision_config.model_name)
+            else:
+                self.backbone = SiglipVisionModel(
+                    SiglipVisionConfig.from_pretrained(vision_config.model_name)
+                )
+        elif vision_config.pretrained:
             self.backbone = AutoModel.from_pretrained(vision_config.model_name)
         else:
             self.backbone = AutoModel.from_config(AutoConfig.from_pretrained(vision_config.model_name))
@@ -384,12 +402,13 @@ class VisionEncoder(nn.Module):
 
     def encoder_layers(self) -> nn.ModuleList:
         """Return the ViT layers across supported Transformers layouts."""
-        encoder = getattr(self.backbone, "encoder", None)
+        root = getattr(self.backbone, "vision_model", self.backbone)
+        encoder = getattr(root, "encoder", None)
         layers = getattr(encoder, "layer", None)
         if layers is None:
             layers = getattr(encoder, "layers", None)
         if layers is None:
-            layers = getattr(self.backbone, "layers", None)
+            layers = getattr(root, "layers", None)
         if layers is None:
             raise TypeError(
                 f"{type(self.backbone).__name__} does not expose ViT encoder layers "
@@ -422,9 +441,10 @@ class VisionEncoder(nn.Module):
         return hidden
 
     def _final_layer_norm(self, tokens: torch.Tensor) -> torch.Tensor:
-        layer_norm = getattr(self.backbone, "layernorm", None)
+        root = getattr(self.backbone, "vision_model", self.backbone)
+        layer_norm = getattr(root, "layernorm", None)
         if layer_norm is None:
-            layer_norm = getattr(self.backbone, "post_layernorm", None)
+            layer_norm = getattr(root, "post_layernorm", None)
         if layer_norm is None:
             raise TypeError(
                 f"{type(self.backbone).__name__} does not expose a final vision LayerNorm."
@@ -633,7 +653,7 @@ class VisionEncoder(nn.Module):
         """
         tokens = self.encode_tokens(images)
         batch, time, views = tokens.shape[:3]
-        frame_latent = tokens[:, :, :, 0]
+        frame_latent = tokens[:, :, :, 0] if self.has_cls_token else tokens.mean(dim=3)
         return frame_latent + self.camera_embedding[:, :, :views]
 
 
@@ -776,6 +796,118 @@ class MosaicTemporalResidual(nn.Module):
         delta = self.output_norm(updated[:, -1] - sequence[:, -1])
         delta = delta.view(batch, views, dim)
         return anchor + torch.tanh(self.residual_gate) * delta
+
+
+class _PerceiverReducerLayer(nn.Module):
+    def __init__(self, dim: int, heads: int, mlp_ratio: float) -> None:
+        super().__init__()
+        self.query_norm = nn.LayerNorm(dim)
+        self.context_norm = nn.LayerNorm(dim)
+        self.cross_attention = nn.MultiheadAttention(
+            dim, heads, dropout=0.0, batch_first=True
+        )
+        self.ffn_norm = nn.LayerNorm(dim)
+        self.ffn = MLP(dim, int(dim * mlp_ratio), dim, 0.0)
+
+    def forward(self, queries: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+        attended, _ = self.cross_attention(
+            self.query_norm(queries),
+            self.context_norm(context),
+            self.context_norm(context),
+            need_weights=False,
+        )
+        queries = queries + attended
+        return queries + self.ffn(self.ffn_norm(queries))
+
+
+class SpaceTimePerceiverEncoder(nn.Module):
+    """Encode raw SigLIP frame tokens into a fixed history-token budget."""
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        dim = config.latent_dim
+        self.frame_count = config.spacetime_frame_count
+        self.temporal_enabled = config.spacetime_temporal_enabled
+        self.time_embedding = nn.Parameter(torch.zeros(1, self.frame_count, 1, 1, dim))
+        self.camera_embedding = nn.Parameter(torch.zeros(1, 1, config.max_views, 1, dim))
+        self.temporal_layers = nn.ModuleList(
+            nn.TransformerEncoderLayer(
+                d_model=dim,
+                nhead=config.spacetime_heads,
+                dim_feedforward=int(dim * config.perceiver_mlp_ratio),
+                dropout=0.0,
+                activation="gelu",
+                norm_first=True,
+                batch_first=True,
+            )
+            for _ in range(config.spacetime_layers)
+        )
+        self.temporal_norm = nn.LayerNorm(dim)
+        self.perceiver_queries = nn.Parameter(
+            torch.zeros(1, config.perceiver_queries, dim)
+        )
+        self.perceiver_layers = nn.ModuleList(
+            _PerceiverReducerLayer(dim, config.spacetime_heads, config.perceiver_mlp_ratio)
+            for _ in range(config.perceiver_layers)
+        )
+        self.output_projection = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim))
+        self.pool_query = nn.Parameter(torch.zeros(1, 1, dim))
+        self.pool_attention = nn.MultiheadAttention(
+            dim, config.spacetime_heads, dropout=0.0, batch_first=True
+        )
+        self.register_buffer("blend_gate", torch.tensor(0.0), persistent=True)
+        nn.init.normal_(self.perceiver_queries, std=0.02)
+        nn.init.normal_(self.pool_query, std=0.02)
+
+    def set_gate(self, value: float) -> None:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"SpaceTime blend gate must be in [0,1], got {value}.")
+        self.blend_gate.fill_(value)
+
+    def blend(self, teacher: torch.Tensor, student: torch.Tensor) -> torch.Tensor:
+        if teacher.shape != student.shape:
+            raise ValueError(
+                f"Teacher/student shapes differ: {teacher.shape} vs {student.shape}"
+            )
+        return torch.lerp(teacher, student, self.blend_gate.to(student.dtype))
+
+    def forward(self, frame_tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        if frame_tokens.ndim != 5:
+            raise ValueError(
+                f"SpaceTime frame tokens must be [B,T,V,P,D], got {frame_tokens.shape}"
+            )
+        batch, frames, views, patches, dim = frame_tokens.shape
+        if frames != self.frame_count:
+            raise ValueError(f"Expected {self.frame_count} history frames, got {frames}.")
+        if views > self.camera_embedding.size(2):
+            raise ValueError(
+                f"SpaceTime encoder has {self.camera_embedding.size(2)} camera slots, got {views}."
+            )
+        # Dataset order is current to oldest. All remaining operations use
+        # chronological order so the final temporal position is current.
+        tokens = frame_tokens.flip(1)
+        tokens = tokens + self.time_embedding + self.camera_embedding[:, :, :views]
+        if self.temporal_enabled:
+            temporal = tokens.permute(0, 2, 3, 1, 4).reshape(
+                batch * views * patches, frames, dim
+            )
+            for layer in self.temporal_layers:
+                temporal = layer(temporal)
+            tokens = self.temporal_norm(temporal).view(
+                batch, views, patches, frames, dim
+            ).permute(0, 3, 1, 2, 4)
+        context = tokens.reshape(batch, frames * views * patches, dim)
+        queries = self.perceiver_queries.expand(batch, -1, -1)
+        for layer in self.perceiver_layers:
+            queries = layer(queries, context)
+        visual_tokens = self.output_projection(queries)
+        pooled, _ = self.pool_attention(
+            self.pool_query.expand(batch, -1, -1),
+            visual_tokens,
+            visual_tokens,
+            need_weights=False,
+        )
+        return visual_tokens, pooled
 
 
 class LanguageEncoder(nn.Module):
@@ -1289,6 +1421,24 @@ class WorldCriticModel(nn.Module):
         self.mosaic_temporal_residual = (
             MosaicTemporalResidual(config) if config.use_mosaic_temporal_residual else None
         )
+        self.spacetime_encoder = (
+            SpaceTimePerceiverEncoder(config) if config.use_spacetime_perceiver else None
+        )
+        self.risk_head = (
+            MLP(config.latent_dim, config.value_hidden_dim, 1, config.dropout)
+            if config.predict_risk
+            else None
+        )
+        self.q_action_encoder = (
+            MLP(config.action_dim, config.action_hidden_dim, config.latent_dim, config.dropout)
+            if config.predict_q
+            else None
+        )
+        self.q_head = (
+            MLP(config.latent_dim * 2, config.value_hidden_dim, 1, config.dropout)
+            if config.predict_q
+            else None
+        )
 
     def pool_views(self, view_latents: torch.Tensor) -> torch.Tensor:
         batch, time, views, dim = view_latents.shape
@@ -1356,7 +1506,37 @@ class WorldCriticModel(nn.Module):
                 f"valid_mask and actions must be on the same device: {valid_mask.device} != {actions.device}."
             )
 
-        if (
+        if self.spacetime_encoder is not None:
+            if history_images is None:
+                raise ValueError("SpaceTime Perceiver requires history_images.")
+            if history_images.ndim != 6:
+                raise ValueError(
+                    f"history_images must be [B,T,V,C,H,W], got {history_images.shape}"
+                )
+            if history_images.size(0) != images.size(0):
+                raise ValueError("history_images and images must have the same batch size.")
+            if history_images.device != images.device:
+                raise ValueError("history_images and images must be on the same device.")
+            history_tokens = self.vision_encoder.encode_tokens(history_images)
+            _, student_current = self.spacetime_encoder(history_tokens)
+            gate = float(self.spacetime_encoder.blend_gate)
+            if self.config.spacetime_teacher_enabled:
+                view_latents = self.vision_encoder(images)
+                teacher_states = self.pool_views(view_latents)
+                teacher_current = teacher_states[:, :1]
+                current_state = self.spacetime_encoder.blend(
+                    teacher_current, student_current
+                )
+                state_latents = torch.cat([current_state, teacher_states[:, 1:]], dim=1)
+            else:
+                if gate != 1.0:
+                    raise ValueError(
+                        "Teacher-free SpaceTime inference requires blend_gate=1."
+                    )
+                teacher_current = None
+                next_state = self.pool_views(self.vision_encoder(images[:, 1:]))
+                state_latents = torch.cat([student_current, next_state], dim=1)
+        elif (
             self.cross_frame_encoder is not None
             or self.temporal_adapter is not None
             or self.sparse_memory_encoder is not None
@@ -1438,6 +1618,11 @@ class WorldCriticModel(nn.Module):
 
         # This line executes before `actions` is consumed anywhere in the graph.
         value = self.value_head(context)
+        risk_logits = self.risk_head(context) if self.risk_head is not None else None
+        q_value = None
+        if self.q_head is not None and self.q_action_encoder is not None:
+            q_action = self.q_action_encoder(actions)
+            q_value = self.q_head(torch.cat([context, q_action], dim=-1))
         next_state_pred = self.dynamics(
             current_state_latent=state_latents[:, :-1],
             context=context,
@@ -1452,6 +1637,10 @@ class WorldCriticModel(nn.Module):
             target_next_state=target_next_state,
             valid_mask=valid_mask,
             next_state_vector_pred=state_vector_pred,
+            alignment_student=student_current if self.spacetime_encoder is not None else None,
+            alignment_teacher=teacher_current if self.spacetime_encoder is not None else None,
+            risk_logits=risk_logits,
+            q_value=q_value,
         )
 
     @torch.inference_mode()
