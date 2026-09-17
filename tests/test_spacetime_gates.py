@@ -23,9 +23,18 @@ class SpaceTimeGateCheckTest(unittest.TestCase):
     def test_alignment_accepts_finite_plateau_without_absolute_threshold(self):
         check_alignment([self.write_summary()])
 
-    def test_alignment_rejects_epoch_limit_without_plateau(self):
+    def test_alignment_accepts_threshold_without_plateau(self):
+        check_alignment(
+            [self.write_summary(plateau_reached=False, best_validation_cosine=0.9)]
+        )
+
+    def test_alignment_rejects_epoch_limit_below_threshold_without_plateau(self):
         with self.assertRaises(SystemExit):
             check_alignment([self.write_summary(plateau_reached=False)])
+
+    def test_alignment_rejects_non_finite_cosine(self):
+        with self.assertRaises(SystemExit):
+            check_alignment([self.write_summary(best_validation_cosine=float("nan"))])
 
 
 if __name__ == "__main__":

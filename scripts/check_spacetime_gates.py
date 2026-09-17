@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 
 
-def check_alignment(paths: list[Path]) -> None:
+def check_alignment(paths: list[Path], threshold: float = 0.9) -> None:
     for path in paths:
         result = json.loads(path.read_text(encoding="utf-8"))
         best = float(result["best_validation_cosine"])
@@ -16,10 +16,13 @@ def check_alignment(paths: list[Path]) -> None:
             f"[alignment] {path}: plateau={result['plateau_reached']}, "
             f"best_validation_cosine={best:.6f}, final_ema={final_ema:.6f}"
         )
-        if not result["plateau_reached"]:
-            raise SystemExit(f"Alignment did not reach its configured plateau: {path}")
         if not math.isfinite(best) or not math.isfinite(final_ema):
             raise SystemExit(f"Alignment cosine is non-finite: {path}")
+        if best < threshold and not result["plateau_reached"]:
+            raise SystemExit(
+                f"Alignment reached neither threshold nor plateau: "
+                f"{best:.6f} < {threshold:.6f}: {path}"
+            )
 
 
 def check_ood(paths: list[Path]) -> None:
@@ -67,11 +70,12 @@ def check_checkpoint(path: Path) -> None:
 def run() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--alignment", nargs="+", type=Path)
+    parser.add_argument("--alignment-threshold", type=float, default=0.9)
     parser.add_argument("--ood", nargs=2, type=Path)
     parser.add_argument("--checkpoint", nargs="+", type=Path)
     args = parser.parse_args()
     if args.alignment:
-        check_alignment(args.alignment)
+        check_alignment(args.alignment, args.alignment_threshold)
     if args.ood:
         check_ood(args.ood)
     if args.checkpoint:

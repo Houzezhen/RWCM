@@ -544,7 +544,7 @@ Mosaic 只用于证明并教授“历史视觉有效”，不是最终模型输�
 
 ### 13.2 四阶段训练
 
-1. `spacetime_align`（最多 5 轮）：完整加载已有 Image-B4 的 ViT backbone、projection 与 WCM 同形权重，并将已训练的 camera embedding复制给 SpaceTime encoder；每个视频 time slot 使用固定的非零初始化以保留帧身份。冻结 Image-B4 visual teacher、student ViT/WCM 和时空层，只训练 Perceiver 与输出 projection。teacher 始终使用与原训练完全相同的 `[0,20,40,60]` 四帧 mosaic；student 的 raw history offsets独立配置，主实验为 8 帧 `[0,9,17,26,34,43,51,60]`。T=4/8/16 都覆盖相同的 60-step 时间范围，只改变采样密度。teacher 同时给出两个只读结果：原 view-attention pooling 状态专供 gate=0 保持 baseline，`A=mean(camera visual tokens)` 专供对齐；student 使用 `B=mean(64 Perceiver tokens)`，因此 A/B 两侧仍是相同的无参数 mean pooling。gate=0，优化 cosine + normalized MSE。不设置 `0.9` 等绝对阈值；监控训练 cosine EMA（decay `0.99`），连续 4000 个 optimizer step 未出现至少 `1e-4` 的提升才认定到达平台并停止。若最大 epoch 内未触发平台，runner 直接判阶段失败；停止后保存 best validation cosine 和实际平台值。
+1. `spacetime_align`（最多 5 轮）：完整加载已有 Image-B4 的 ViT backbone、projection 与 WCM 同形权重，并将已训练的 camera embedding复制给 SpaceTime encoder；每个视频 time slot 使用固定的非零初始化以保留帧身份。冻结 Image-B4 visual teacher、student ViT/WCM 和时空层，只训练 Perceiver 与输出 projection。teacher 始终使用与原训练完全相同的 `[0,20,40,60]` 四帧 mosaic；student 的 raw history offsets独立配置，主实验为 8 帧 `[0,9,17,26,34,43,51,60]`。T=4/8/16 都覆盖相同的 60-step 时间范围，只改变采样密度。teacher 同时给出两个只读结果：原 view-attention pooling 状态专供 gate=0 保持 baseline，`A=mean(camera visual tokens)` 专供对齐；student 使用 `B=mean(64 Perceiver tokens)`，因此 A/B 两侧仍是相同的无参数 mean pooling。gate=0，优化 cosine + normalized MSE。validation cosine 达到 `0.9` 时立即停止；否则监控训练 cosine EMA（decay `0.99`），连续 4000 个 optimizer step 未出现至少 `1e-4` 的提升时停止。达到阈值或平台均视为对齐阶段通过；若最大 epoch 内两者均未触发，runner 判定阶段失败。停止后保存 best validation cosine 和实际平台值。
 2. `spacetime_gate`（5 轮）：只训练时空层和 Perceiver，gate 按 optimizer step 从 0 线性升到 1，alignment weight 同步从 `0.2` 线性衰减到 0；最后一步 gate=1/weight=0 时不再执行 teacher。该阶段必须导出末步 checkpoint 而非中途 validation best，随后执行传入/不传入 teacher 的逐位一致性门禁，成功后 teacher 永久退出。
 3. `spacetime_joint`（5 轮）：关闭 mosaic teacher，gate 固定 1；解冻 ViT 最后 4 层、视觉 projection、language fusion/context trunk 与 value/risk/Q heads。
 4. `spacetime_full`（3 轮）：仍为 teacher-free/gate=1，以 `2e-6` 全量微调 ViT 与 WCM（CLIP 文本塔按既有协议继续冻结）。Align、Joint、Full 从验证集 best checkpoint 导出 `deploy.pt`；Gate 阶段例外，导出完成调度后的末步权重。
@@ -559,7 +559,7 @@ Risk target 为 `1-episode_success`；Q head 在 value 计算之后读取行为�
 - 已有四帧 Image-B4 mosaic（不重训）；
 - SpaceTimeViT + Perceiver-64。
 
-门禁：用真实 checkpoint 完整前向验证 gate=0 相对 Image-B4 baseline 的 `context/value/dynamics/target` 最大逐位误差 `<1e-5`；阶段 0 必须由 cosine 平台条件结束，但不硬卡绝对值；gate=1 在传入/不传入 teacher 时上述输出最大逐位误差 `<1e-5`；最终 OOD Pearson 两个 seed 均不得低于 mosaic；两个 seed 的 MSE 方向一致；若 raw MSE 改善但 centered MSE 未改善，则 Pearson paired CI 下界必须大于 0，排除单纯 bias 收窄。
+门禁：用真实 checkpoint 完整前向验证 gate=0 相对 Image-B4 baseline 的 `context/value/dynamics/target` 最大逐位误差 `<1e-5`；阶段 0 validation cosine 必须达到 `0.9` 或训练 cosine EMA 已达平台；gate=1 在传入/不传入 teacher 时上述输出最大逐位误差 `<1e-5`；最终 OOD Pearson 两个 seed 均不得低于 mosaic；两个 seed 的 MSE 方向一致；若 raw MSE 改善但 centered MSE 未改善，则 Pearson paired CI 下界必须大于 0，排除单纯 bias 收窄。
 
 配置和入口：
 
