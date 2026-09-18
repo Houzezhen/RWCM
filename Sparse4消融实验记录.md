@@ -568,3 +568,33 @@ Risk target 为 `1-episode_success`；Q head 在 value 计算之后读取行为�
 - `28_run_spacetime_vit_pair.sh`
 
 同一入口通过 `WCM_VARIANT=t4|t8|t16` 选择视频长度；默认 `t8` 是主实验，`t4` 是短历史消融，`t16` 用于检查增加上游计算后 OOD Pearson 是否继续提升。teacher mosaic 在三个变体中都固定为原始四帧输入。
+
+### 13.4 t8 主实验结果（2026-09-18，双 seed，batch 4）
+
+全流程跑通：`wcm_vit_single_s{3072,42}` 对照 + t8 四阶段 + 等价性门禁 + 5cut/OOD 评估 + paired episode bootstrap（20000 次重采样）。比较文件在 `outputs/eval_spacetime_vit_t8_pair/comparisons/`。
+
+**vs 单帧 ViT（下界）——压倒性、两 seed 一致：**
+
+| 指标 | 5cut | OOD |
+|---|---|---|
+| ΔMSE | -0.028 / -0.031（CI 全负） | -0.100 / -0.146（CI 全负） |
+| ΔPearson | +0.453 / +0.463 | +0.654 / +0.719（单帧 0.13~0.16 → spacetime 0.81~0.85） |
+
+**vs mosaic（主对照）——两 seed 方向相反，未过门禁：**
+
+| | s3072 | s42 |
+|---|---|---|
+| OOD MSE | -0.0011，CI [-0.0036,+0.0015]（含 0，平） | **-0.0271，CI [-0.0301,-0.0242]（显著更优）** |
+| OOD Pearson | **-0.039，CI [-0.052,-0.026]（显著更差，0.851→0.812）** | +0.017，CI [0.000,+0.033]（下限贴 0） |
+
+5cut 上 s3072 MSE 略差 / s42 MSE 略优、Pearson 均平——同样无一致方向。
+
+**判定：门禁失败。** OOD Pearson 两 seed 未同时不低于 mosaic（s3072 显著 -0.039），MSE 方向不一致。
+
+**结论与解读：**
+
+1. **架构可行性成立**：共享 ViT + factorized 时序 attention + Perceiver 压缩 3152→64（约 49×），能把 mosaic 的历史编码能力基本搬进 64 token（OOD Pearson 0.81~0.85 vs mosaic 0.84~0.85）。此前三次时序化尝试（§9 cross-attention、§10 alternating、§11 SparseMemory）均未达到此水平。
+2. **teacher 锚定嫌疑**：s42 在 MSE 上略有突破而 s3072 Pearson 被 anchor，符合"align/gate 蒸馏把 student 拉进 mosaic 表示空间、后半程不足突破"的预期（与 §13 设计评审时的预判一致）。
+3. **方差观察**：mosaic 自身双 seed 波动大（OOD MSE 0.046/0.053），spacetime 波动反而更小（0.045/0.026）；此现象未计入门禁，仅记录。
+
+**下一步（最小消融，决定该线生死）：** 去掉 align/gate 蒸馏阶段，LayerScale 小初值（1e-3）+ 新模块 10× lr 直接端到端训练 spacetime 层 + Perceiver，其余对照与门禁不变。若仍为打平，则接受结论：当前监督下压缩历史无增量，mosaic 为性价比最优，该线终结。
