@@ -176,10 +176,16 @@ class RegisterConfigValidationTest(unittest.TestCase):
         self.assertEqual(config.model.spacetime_frame_count, 8)
 
     def test_shipped_spacetime_stage_configs_are_valid(self):
-        for stage in ("align", "gate", "joint", "full"):
+        for stage in ("align", "gate", "joint", "full", "direct", "direct_full"):
             with self.subTest(stage=stage):
                 config = load_config(f"configs/wcm_spacetime_{stage}.yaml")
                 validate_train_config(config)
+
+    def test_spacetime_layerscale_must_be_positive_when_enabled(self):
+        config = load_config("configs/wcm_spacetime_direct.yaml")
+        config.model.spacetime_layerscale_init = 0.0
+        with self.assertRaisesRegex(ValueError, "spacetime_layerscale_init"):
+            validate_train_config(config)
 
     def test_only_alignment_stage_may_disable_value_loss(self):
         config = load_config("configs/wcm_spacetime_align.yaml")

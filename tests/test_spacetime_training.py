@@ -7,6 +7,7 @@ from world_critic.config import DataConfig, TrainConfig
 from world_critic.training import (
     AlignmentPlateauMonitor,
     configure_training_stage,
+    create_optimizer,
     scheduled_alignment_weight,
     update_spacetime_gate,
 )
@@ -111,6 +112,18 @@ class SpaceTimeTrainingTest(unittest.TestCase):
         self.assertFalse(model.view_pool_query.requires_grad)
         self.assertFalse(model.view_attention.in_proj_weight.requires_grad)
         self.assertTrue(model.vision_encoder.layers[0].weight.requires_grad)
+
+    def test_spacetime_parameters_use_temporal_lr_scale(self):
+        model = DummyModel()
+        config = self.config("spacetime_joint")
+        config.optim.lr = 1.0e-5
+        config.optim.temporal_lr_scale = 10.0
+        configure_training_stage(model, config)
+
+        optimizer = create_optimizer(model, config)
+        learning_rates = sorted(group["lr"] for group in optimizer.param_groups)
+
+        self.assertEqual(learning_rates, [1.0e-5, 1.0e-4])
 
     def test_alignment_plateau_stops_at_patience_boundary(self):
         monitor = AlignmentPlateauMonitor(

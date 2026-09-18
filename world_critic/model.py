@@ -869,6 +869,14 @@ class SpaceTimePerceiverEncoder(nn.Module):
             )
             for _ in range(config.spacetime_layers)
         )
+        self.temporal_layer_scales = (
+            nn.ParameterList(
+                nn.Parameter(torch.full((dim,), config.spacetime_layerscale_init))
+                for _ in range(config.spacetime_layers)
+            )
+            if config.spacetime_layerscale_init is not None
+            else None
+        )
         self.temporal_norm = nn.LayerNorm(dim)
         self.perceiver_queries = nn.Parameter(
             torch.zeros(1, config.perceiver_queries, dim)
@@ -876,6 +884,14 @@ class SpaceTimePerceiverEncoder(nn.Module):
         self.perceiver_layers = nn.ModuleList(
             _PerceiverReducerLayer(dim, config.spacetime_heads, config.perceiver_mlp_ratio)
             for _ in range(config.perceiver_layers)
+        )
+        self.perceiver_layer_scales = (
+            nn.ParameterList(
+                nn.Parameter(torch.full((dim,), config.spacetime_layerscale_init))
+                for _ in range(config.perceiver_layers)
+            )
+            if config.spacetime_layerscale_init is not None
+            else None
         )
         self.output_projection = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim))
         self.register_buffer("blend_gate", torch.tensor(0.0), persistent=True)
@@ -920,15 +936,27 @@ class SpaceTimePerceiverEncoder(nn.Module):
             temporal = tokens.permute(0, 2, 3, 1, 4).reshape(
                 batch * views * patches, frames, dim
             )
-            for layer in self.temporal_layers:
-                temporal = layer(temporal)
+            for index, layer in enumerate(self.temporal_layers):
+                updated = layer(temporal)
+                if self.temporal_layer_scales is None:
+                    temporal = updated
+                else:
+                    temporal = temporal + self.temporal_layer_scales[index] * (
+                        updated - temporal
+                    )
             tokens = self.temporal_norm(temporal).view(
                 batch, views, patches, frames, dim
             ).permute(0, 3, 1, 2, 4)
         context = tokens.reshape(batch, frames * views * patches, dim)
         queries = self.perceiver_queries.expand(batch, -1, -1)
-        for layer in self.perceiver_layers:
-            queries = layer(queries, context)
+        for index, layer in enumerate(self.perceiver_layers):
+            updated = layer(queries, context)
+            if self.perceiver_layer_scales is None:
+                queries = updated
+            else:
+                queries = queries + self.perceiver_layer_scales[index] * (
+                    updated - queries
+                )
         visual_tokens = self.output_projection(queries)
         pooled = visual_tokens.mean(dim=1, keepdim=True)
         return visual_tokens, pooled

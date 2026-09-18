@@ -598,3 +598,18 @@ Risk target 为 `1-episode_success`；Q head 在 value 计算之后读取行为�
 3. **方差观察**：mosaic 自身双 seed 波动大（OOD MSE 0.046/0.053），spacetime 波动反而更小（0.045/0.026）；此现象未计入门禁，仅记录。
 
 **下一步（最小消融，决定该线生死）：** 去掉 align/gate 蒸馏阶段，LayerScale 小初值（1e-3）+ 新模块 10× lr 直接端到端训练 spacetime 层 + Perceiver，其余对照与门禁不变。若仍为打平，则接受结论：当前监督下压缩历史无增量，mosaic 为性价比最优，该线终结。
+
+### 13.5 teacher-free direct 消融（待运行）
+
+已实现 `configs/wcm_spacetime_direct.yaml`、`configs/wcm_spacetime_direct_full.yaml` 和 `29_run_spacetime_direct_pair.sh`。实验从每个 seed 对应的 Image-B4 `deploy.pt` 直接初始化，完全不构建 mosaic teacher，也不运行 align/gate；direct joint 训练 10 轮，对齐原 gate 5 轮 + joint 5 轮的 value/risk/Q 监督预算，随后保持 full 3 轮不变。SpaceTime temporal 与 Perceiver 每个残差层使用逐通道 LayerScale（初值 `1e-3`），direct joint 阶段整个 `spacetime_encoder` 使用 base lr 的 10 倍，其余模块、数据划分、batch、评估集、paired bootstrap 和 OOD 门禁不变。除主判定 direct vs mosaic 外，同时导出 direct vs 原 staged SpaceTime 的 paired 比较以直接检查 teacher anchoring。
+
+服务器运行：
+
+```bash
+cd ~/code_1/WCM
+git switch cross-frame-wcm
+git pull --ff-only
+CUDA_VISIBLE_DEVICES=0 bash 29_run_spacetime_direct_pair.sh
+```
+
+判定解释：若 direct 双 seed 通过原 mosaic 门禁，teacher anchoring 嫌疑得到支持；若仍打平或失败，则停止 SpaceTime 压缩路线，保留 Image-B4 mosaic，并转向 return/risk/Q 监督及下游策略收益验证。

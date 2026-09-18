@@ -71,6 +71,13 @@ def run() -> None:
         "risk_head": model.risk_head.net[-1].weight.grad,
         "q_head": model.q_head.net[-1].weight.grad,
     }
+    if model.spacetime_encoder.temporal_layer_scales is not None:
+        gradients["temporal_layerscale"] = (
+            model.spacetime_encoder.temporal_layer_scales[0].grad
+        )
+        gradients["perceiver_layerscale"] = (
+            model.spacetime_encoder.perceiver_layer_scales[0].grad
+        )
     norms = {
         name: float(value.norm()) if value is not None else 0.0
         for name, value in gradients.items()

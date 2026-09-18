@@ -201,6 +201,7 @@ def load_training_checkpoint(
                 "perceiver_queries": 64,
                 "perceiver_layers": 2,
                 "perceiver_mlp_ratio": 2.0,
+                "spacetime_layerscale_init": None,
                 "spacetime_teacher_enabled": False,
                 "spacetime_temporal_enabled": True,
                 "predict_risk": False,

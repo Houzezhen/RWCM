@@ -136,6 +136,9 @@ class ModelConfig:
     perceiver_queries: int = 64
     perceiver_layers: int = 2
     perceiver_mlp_ratio: float = 2.0
+    # Optional LayerScale on each newly initialized temporal and Perceiver
+    # residual block. None preserves historical checkpoint parameterization.
+    spacetime_layerscale_init: float | None = None
     spacetime_teacher_enabled: bool = False
     spacetime_temporal_enabled: bool = True
     predict_risk: bool = False
@@ -584,6 +587,11 @@ def validate_train_config(config: TrainConfig) -> None:
         raise ValueError("model.mosaic_temporal_mlp_ratio must be positive.")
     if config.model.spacetime_frame_count < 1 or config.model.spacetime_layers < 1:
         raise ValueError("spacetime_frame_count and spacetime_layers must be positive.")
+    if (
+        config.model.spacetime_layerscale_init is not None
+        and config.model.spacetime_layerscale_init <= 0
+    ):
+        raise ValueError("model.spacetime_layerscale_init must be positive when set.")
     if (
         config.model.spacetime_heads < 1
         or config.model.latent_dim % config.model.spacetime_heads != 0

@@ -70,6 +70,35 @@ class TemporalInputTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be in"):
             encoder.set_gate(1.1)
 
+    def test_spacetime_layerscale_is_optional_and_receives_gradients(self):
+        legacy = self.spacetime_encoder()
+        self.assertIsNone(legacy.temporal_layer_scales)
+        self.assertIsNone(legacy.perceiver_layer_scales)
+
+        config = ModelConfig(
+            latent_dim=16,
+            max_views=2,
+            spacetime_frame_count=4,
+            spacetime_layers=2,
+            spacetime_heads=4,
+            perceiver_queries=8,
+            perceiver_layers=1,
+            perceiver_mlp_ratio=2.0,
+            spacetime_layerscale_init=1.0e-3,
+        )
+        encoder = SpaceTimePerceiverEncoder(config)
+        _, pooled = encoder(torch.randn(2, 4, 2, 9, 16))
+        pooled.square().mean().backward()
+
+        self.assertTrue(
+            torch.allclose(
+                encoder.temporal_layer_scales[0],
+                torch.full((16,), 1.0e-3),
+            )
+        )
+        self.assertGreater(float(encoder.temporal_layer_scales[0].grad.abs().sum()), 0.0)
+        self.assertGreater(float(encoder.perceiver_layer_scales[0].grad.abs().sum()), 0.0)
+
     def test_context_trunk_consumes_all_perceiver_tokens_before_readout(self):
         config = ModelConfig(
             latent_dim=16,
