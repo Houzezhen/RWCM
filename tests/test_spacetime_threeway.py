@@ -78,6 +78,20 @@ class SpaceTimeThreewayTest(unittest.TestCase):
 
         self.assertEqual(decision["branch"], "D")
 
+    def test_branch_b_uses_original_wcm_as_the_main_narrative(self):
+        items = [comparison(), comparison()]
+
+        decision = choose_branch(
+            {"passed": True},
+            {"passed": False},
+            items,
+            items,
+        )
+
+        self.assertEqual(decision["branch"], "B")
+        self.assertIn("原始 WCM → SpaceTime", decision["conclusion"])
+        self.assertIn("实验强基线", decision["conclusion"])
+
 
 if __name__ == "__main__":
     unittest.main()

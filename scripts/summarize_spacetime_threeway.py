@@ -228,7 +228,10 @@ def choose_branch(
     if baseline_result["passed"]:
         return {
             "branch": "B",
-            "conclusion": "SpaceTime 超过原始 WCM，但未超过 Image-B4 mosaic。",
+            "conclusion": (
+                "SpaceTime 超过原始 WCM，但未超过 Image-B4 mosaic；论文主叙事仅采用"
+                "‘原始 WCM → SpaceTime’，mosaic 只作为实验强基线报告。"
+            ),
         }
     return {
         "branch": "C",
