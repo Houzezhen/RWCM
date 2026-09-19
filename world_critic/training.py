@@ -601,6 +601,10 @@ def evaluate_loader(
     alignment_count = 0.0
     curve_records: list[dict[str, Any]] = []
     processed_curve_samples = 0
+    inference_samples = 0
+    inference_batches = 0
+    cpu_forward_seconds = 0.0
+    cuda_forward_events: list[tuple[torch.cuda.Event, torch.cuda.Event]] = []
     local_error: str | None = None
     loop_started = time.monotonic()
     try:
@@ -653,6 +657,12 @@ def evaluate_loader(
                     teacher_current_state, teacher_alignment_state = teacher_model(
                         batch["images"][:, :1]
                     )
+            if ctx.device.type == "cuda":
+                timing_start = torch.cuda.Event(enable_timing=True)
+                timing_end = torch.cuda.Event(enable_timing=True)
+                timing_start.record()
+            else:
+                timing_started = time.perf_counter()
             with autocast_context(ctx.device, config.precision):
                 output = unwrap_model(model)(
                     images=batch["images"],
@@ -665,6 +675,13 @@ def evaluate_loader(
                     teacher_current_state=teacher_current_state,
                     teacher_alignment_state=teacher_alignment_state,
                 )
+            if ctx.device.type == "cuda":
+                timing_end.record()
+                cuda_forward_events.append((timing_start, timing_end))
+            else:
+                cpu_forward_seconds += time.perf_counter() - timing_started
+            inference_samples += int(batch["images"].size(0))
+            inference_batches += 1
             return_target = canonicalize_return_target(batch["return_targets"])
             valid = output.valid_mask.bool()
             token_mask = valid.unsqueeze(-1)
@@ -779,6 +796,14 @@ def evaluate_loader(
 
     collectively_validate(ctx, "Evaluation loop", validate_evaluation_loop)
 
+    if ctx.device.type == "cuda" and cuda_forward_events:
+        torch.cuda.synchronize(ctx.device)
+        local_forward_seconds = sum(
+            start.elapsed_time(end) for start, end in cuda_forward_events
+        ) / 1000.0
+    else:
+        local_forward_seconds = cpu_forward_seconds
+
     if collect_episode_curves:
         gathered = gather_objects(
             {"records": curve_records, "samples": processed_curve_samples},
@@ -865,6 +890,21 @@ def evaluate_loader(
     reduced["alignment_cosine"] = (
         alignment_values[1].item() / alignment_values[2].item()
         if alignment_values[2].item() > 0
+        else math.nan
+    )
+    timing_values = torch.tensor(
+        [local_forward_seconds, inference_samples, inference_batches],
+        dtype=torch.float64,
+        device=ctx.device,
+    )
+    if ctx.distributed:
+        dist.all_reduce(timing_values, op=dist.ReduceOp.SUM)
+    reduced["inference_forward_seconds"] = timing_values[0].item()
+    reduced["inference_samples"] = int(timing_values[1].item())
+    reduced["inference_batches"] = int(timing_values[2].item())
+    reduced["inference_forward_ms_per_sample"] = (
+        1000.0 * timing_values[0].item() / timing_values[1].item()
+        if timing_values[1].item() > 0
         else math.nan
     )
     reduced.update(metrics_with_curves)

@@ -1,7 +1,7 @@
 # SpaceTime 三方对照实验计划
 
-状态：仅计划，尚未执行  
-日期：2026-09-18
+状态：执行设计已实现，待训练机完成统一评估
+日期：2026-09-19
 
 ## 1. 实验目标
 
@@ -43,6 +43,8 @@ scripts.compare_experiments --align common
 ```
 
 每个 JSON 必须记录共同 endpoint 数量、双方丢弃 endpoint 数量和 target 一致性检查。最终三方汇总只使用三模型共同存在的 endpoint；若两两比较的 endpoint 集不同，必须额外生成三方共同 endpoint 清单后重算，不能直接比较两份两两 JSON 的绝对指标。
+
+正式执行由 `scripts.summarize_spacetime_threeway` 先生成三方共同 endpoint manifest，再把同一 manifest 强制应用到全部比较；这是比独立两两 `--align common` 更严格的最终口径。
 
 ### 3.3 主次数据集
 
@@ -177,16 +179,37 @@ OOD 上同时满足：
 
 ## 9. 执行前检查清单
 
-- [ ] 确认两 seed 的三个主 checkpoint 均存在且配置可追溯；
-- [ ] 确认 SpaceTime deploy checkpoint 中 `gate=1`、teacher 关闭、`history_mosaic=false`；
-- [ ] 固定 5cut/OOD 数据路径和数据 revision；
-- [ ] 生成三方共同 endpoint 清单；
-- [ ] 对所有比较显式传递模型 seed；
+- [x] 自动确认两 seed 的三个主 checkpoint 和 staged 诊断 checkpoint 均存在且配置可追溯；
+- [x] 自动确认 SpaceTime deploy checkpoint 中 `gate=1`、teacher 关闭、`history_mosaic=false`；
+- [x] 由统一入口固定 5cut/OOD 数据路径，并在评估 summary 中记录数据 root、revision 和可用时的 Hugging Face fingerprint；
+- [x] 自动生成每个数据集、每个 seed 的三方共同 endpoint 清单；
+- [x] 对所有比较显式传递模型 seed；
 - [ ] 跑完 paired bootstrap 后才填写结果表；
-- [ ] 先按 §6 自动判门禁，再选择 §7 叙事分支；
-- [ ] 不因 5cut 更好而覆盖 OOD 失败；
-- [ ] 不把 direct vs staged 的提升替代 direct vs mosaic 的主判定。
+- [x] 汇总器先按 §6 自动判门禁，再唯一选择 §7 叙事分支；
+- [x] 汇总器只使用 OOD 门禁决定分支，5cut 不覆盖 OOD；
+- [x] direct vs staged 仅作为诊断输出，不参与主判定。
 
-## 10. 本计划之外
+## 10. 执行入口与产物
 
-当前不实施训练、评估脚本或配置修改。若进入执行阶段，再单独完成：三方共同 endpoint 支持、统一评估入口、自动门禁与结果汇总。matched-training 三臂因果消融作为后续增强实验，不与本轮系统级比较混在一起。
+统一入口为：
+
+```bash
+bash 30_run_spacetime_threeway.sh
+```
+
+入口只复用已训练 checkpoint，不启动新训练。它依次完成 checkpoint 审计、5cut/OOD 四角色评估、三方共同 endpoint 对齐、20000 次 episode-level paired bootstrap、自动门禁和 A/B/C/D 分支选择。主要产物为：
+
+```text
+outputs/eval_spacetime_threeway/
+  checkpoint_inventory.json
+  endpoint_manifests/{5cut,ood}_threeway_s{3072,42}.json
+  comparisons/{5cut,ood}_{comparison}_s{3072,42}.json
+  threeway_results.json
+  threeway_results.md
+```
+
+默认路径可通过 `WCM_CHECKPOINT_ROOT`、`WCM_5CUT_ROOT`、`WCM_OOD_ROOT` 和 `WCM_THREEWAY_EVAL_ROOT` 覆盖。结果汇总同时记录参数量、输入帧数、视觉 token 数和同一评估协议下的模型 forward 毫秒/样本。
+
+## 11. 本计划之外
+
+matched-training 三臂因果消融仍作为后续增强实验，不与本轮系统级比较混在一起。本轮结果只支持系统级比较，不改变 §4 中对架构因果归因的限制。

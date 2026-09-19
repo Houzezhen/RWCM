@@ -9,7 +9,15 @@ from unittest.mock import patch
 
 import numpy as np
 
-from scripts.compare_experiments import curve_path, episode_statistics, load, metrics, run
+from scripts.compare_experiments import (
+    compare_rows,
+    curve_path,
+    episode_statistics,
+    load,
+    load_endpoint_manifest,
+    metrics,
+    run,
+)
 
 
 class CompareExperimentsTest(unittest.TestCase):
@@ -79,8 +87,56 @@ class CompareExperimentsTest(unittest.TestCase):
             result = json.loads(stdout.getvalue())
 
             self.assertAlmostEqual(result["candidate_mse"], 0.01)
+            self.assertAlmostEqual(result["candidate_centered_mse"], 0.0)
             self.assertAlmostEqual(result["candidate_pearson"], 1.0)
             self.assertAlmostEqual(result["candidate_mean_bias"], 0.1)
+            self.assertEqual(result["target_consistency"]["mismatched_endpoints"], 0)
+
+    def test_manifest_forces_an_identical_endpoint_population(self):
+        baseline = {
+            (1, 0): (0.0, 0.0),
+            (1, 1): (0.4, 0.5),
+            (2, 0): (1.0, 1.0),
+        }
+        candidate = {
+            (1, 0): (0.0, 0.0),
+            (1, 1): (0.5, 0.5),
+            (2, 0): (0.8, 1.0),
+            (3, 0): (2.0, 2.0),
+        }
+        keys = {(1, 1), (2, 0)}
+        result = compare_rows(
+            baseline,
+            candidate,
+            baseline_path=Path("baseline.csv"),
+            candidate_path=Path("candidate.csv"),
+            bootstrap_samples=20,
+            seed=42,
+            endpoint_keys=keys,
+        )
+
+        self.assertEqual(result["alignment"], "manifest")
+        self.assertEqual(result["endpoints"], 2)
+        self.assertEqual(result["dropped_baseline_endpoints"], 1)
+        self.assertEqual(result["dropped_candidate_endpoints"], 2)
+        self.assertIn("centered_mse_paired_episode_bootstrap_ci95", result)
+
+    def test_manifest_loader_rejects_duplicates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "endpoints.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "endpoints": [
+                            {"episode_id": 1, "frame_index": 2},
+                            {"episode_id": 1, "frame_index": 2},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "Duplicate endpoint"):
+                load_endpoint_manifest(path)
 
 
 if __name__ == "__main__":

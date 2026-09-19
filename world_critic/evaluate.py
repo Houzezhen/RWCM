@@ -322,10 +322,31 @@ def run() -> None:
         collectively_validate(ctx, "Evaluation episode curve write", write_episode_curves)
         log("episode curve stage complete")
         result = _json_safe({
+            "evaluation_schema_version": 2,
             "checkpoint": str(Path(args.checkpoint).resolve()),
+            "dataset": {
+                "repo_id": train_config.data.repo_id,
+                "root": str(train_config.data.root),
+                "revision": train_config.data.revision,
+                "fingerprint": getattr(
+                    getattr(dataset, "hf_dataset", dataset), "_fingerprint", None
+                ),
+            },
             "split": args.split,
             "world_size": ctx.world_size,
             "num_windows": len(eval_dataset),
+            "model": {
+                "parameters": sum(parameter.numel() for parameter in model.parameters()),
+            },
+            "timing": {
+                "forward_seconds": metrics.get("inference_forward_seconds"),
+                "forward_ms_per_sample": metrics.get("inference_forward_ms_per_sample"),
+                "samples": metrics.get("inference_samples"),
+                "batches": metrics.get("inference_batches"),
+                "batch_size": args.batch_size,
+                "device": str(ctx.device),
+                "precision": train_config.precision,
+            },
             "metrics": metrics,
             "episode_curves": curve_summary,
         })
