@@ -613,3 +613,29 @@ CUDA_VISIBLE_DEVICES=0 bash 29_run_spacetime_direct_pair.sh
 ```
 
 判定解释：若 direct 双 seed 通过原 mosaic 门禁，teacher anchoring 嫌疑得到支持；若仍打平或失败，则停止 SpaceTime 压缩路线，保留 Image-B4 mosaic，并转向 return/risk/Q 监督及下游策略收益验证。
+
+### 13.6 teacher-free direct 消融结果（2026-09-21，双 seed）
+
+direct 双 seed（`wcm_spacetime_vit_t8_direct_full_s{3072,42}`）已训完，并由预注册三方对照（`30_run_spacetime_threeway.sh` + `SpaceTime三方对照实验计划.md`，2026-09-19 定稿）统一评估：原始 WCM baseline（`wcm_baseline_exp`，batch 8）vs Image-B4 mosaic vs direct SpaceTime，三方共同 endpoint（OOD 125 集/21832 点，5cut 145 集/27727 点），`scripts.summarize_spacetime_threeway` 生成 manifest 后强制同口径比较。
+
+**teacher anchoring 验证（direct vs §13.4 staged，OOD s3072）**：MSE 0.0445→0.0333，Pearson 0.812→0.838（与 mosaic 的差距从 -0.039 收窄到 -0.011）；s42 基本不变（0.0262→0.0247 / 0.851→0.851）。去掉 align/gate 蒸馏后 s3072 明显改善——**teacher 锚定得到数据支持**。
+
+**三方绝对指标（OOD）**：
+
+| seed | 原始 WCM MSE / r | mosaic MSE / r | SpaceTime MSE / r | SpaceTime bias |
+|---:|---|---|---|---|
+| 3072 | 0.1517 / 0.140 | 0.0452 / 0.849 | 0.0333 / 0.838 | -0.097 |
+| 42 | 0.1104 / 0.226 | 0.0529 / 0.834 | 0.0247 / 0.851 | -0.073 |
+
+**门禁**：vs 原始 WCM 全部 PASS（两 seed ΔMSE -0.086~-0.118、ΔPearson +0.63~+0.70，CI 全显著）；vs mosaic FAIL，落在**预注册分支 D**（seed/指标方向冲突，证据不足）：
+
+- OOD ΔMSE：-0.0119 [-0.0141,-0.0095] / -0.0283 [-0.0311,-0.0254]，两 seed 显著改善；
+- OOD ΔPearson：s3072 **-0.0109** [-0.0224,+0.0003]（贴 0）、s42 **+0.0166** [+0.0041,+0.0288]（显著）——方向冲突；
+- Δcentered MSE：s3072 +0.0055（显著变差）/ s42 -0.0004（平）——raw MSE 改善**主要来自 bias 收窄**（spacetime bias -0.07~-0.10 vs mosaic -0.16~-0.18），触发 §6.2 bias 例外条款（要求两 seed Pearson 同向提升）未满足；
+- 5cut 支持性结果：Pearson 0.873/0.871 vs mosaic 0.857/0.857，两 seed 均略优，但不覆盖 OOD 判定。
+
+**效率**：SpaceTime 参数 176.1M（+5.5M），forward 12.9 ms/样本 ≈ mosaic（6.1 ms）的 2.1×、baseline 的 1.9×；输入 8 帧/64 视觉 token。
+
+**结论**：direct 消融未推翻 mosaic 主叙事，也未终结 SpaceTime 线——teacher anchoring 确认存在且去除后 s3072 明显恢复，但 Pearson 在 s3072 仍贴 0 微降、centered MSE 未跟上，双 seed 证据不足。按分支 D 预注册方案：**不调门禁、不挑 checkpoint，增加 seed**（下一 seed 1337：补 direct 训练 + 同 seed mosaic/baseline 后重跑三方对照）。
+
+结果文件：`outputs/eval_spacetime_threeway/threeway_results.{json,md}`。
