@@ -1,6 +1,6 @@
 # SpaceTime 三方对照实验计划
 
-状态：执行设计已实现，待训练机完成统一评估
+状态：已完成（2026-09-21）；预注册判定落在**分支 D**，详见 §12 结果记录
 日期：2026-09-19
 
 ## 1. 实验目标
@@ -161,23 +161,27 @@ OOD 上同时满足：
 
 ## 8. 结果表模板
 
-### 8.1 三方绝对指标
+### 8.1 三方绝对指标（三方共同 endpoint：5cut 145 集/27727 点，OOD 125 集/21832 点）
 
 | 数据集 | seed | 原始 WCM MSE / Pearson | mosaic MSE / Pearson | SpaceTime MSE / Pearson |
-|---|---:|---:|---:|---:|
-| 5cut | 3072 | 待填 | 待填 | 待填 |
-| 5cut | 42 | 待填 | 待填 | 待填 |
-| OOD | 3072 | 待填 | 待填 | 待填 |
-| OOD | 42 | 待填 | 待填 | 待填 |
+|---|---:|---|---|---|
+| 5cut | 3072 | 0.04054 / 0.335 | 0.01088 / 0.857 | 0.00999 / 0.873 |
+| 5cut | 42 | 0.03675 / 0.407 | 0.01114 / 0.857 | 0.00944 / 0.871 |
+| OOD | 3072 | 0.15167 / 0.140 | 0.04524 / 0.849 | 0.03334 / 0.838 |
+| OOD | 42 | 0.11036 / 0.226 | 0.05294 / 0.834 | 0.02467 / 0.851 |
+
+补充（OOD cMSE / mean bias）：baseline 0.0691/-0.287、0.0582/-0.228；mosaic 0.0183/-0.164、0.0198/-0.182；SpaceTime 0.0239/-0.097、0.0194/-0.073。
 
 ### 8.2 SpaceTime paired 增量
 
-| 对照 | 数据集 | seed | ΔMSE [95% CI] | Δcentered MSE | ΔPearson [95% CI] | 判定 |
-|---|---|---:|---|---:|---|---|
-| 原始 WCM | OOD | 3072 | 待填 | 待填 | 待填 | 待填 |
-| 原始 WCM | OOD | 42 | 待填 | 待填 | 待填 | 待填 |
-| mosaic | OOD | 3072 | 待填 | 待填 | 待填 | 待填 |
-| mosaic | OOD | 42 | 待填 | 待填 | 待填 | 待填 |
+| 对照 | 数据集 | seed | ΔMSE [95% CI] | Δcentered MSE [95% CI] | ΔPearson [95% CI] | 判定 |
+|---|---|---:|---|---|---|---|
+| 原始 WCM | OOD | 3072 | -0.11833 [-0.12618, -0.11060] | -0.04528 [-0.04938, -0.04119] | +0.69834 [0.65581, 0.74500] | 优于 |
+| 原始 WCM | OOD | 42 | -0.08568 [-0.09314, -0.07849] | -0.03883 [-0.04276, -0.03479] | +0.62509 [0.56764, 0.68721] | 优于 |
+| mosaic | OOD | 3072 | -0.01190 [-0.01410, -0.00953] | +0.00553 [0.00421, 0.00697] | -0.01091 [-0.02235, +0.00027] | 未超过 |
+| mosaic | OOD | 42 | -0.02827 [-0.03113, -0.02539] | -0.00042 [-0.00211, +0.00136] | +0.01655 [0.00406, 0.02882] | 未超过 |
+
+vs mosaic 判定说明：ΔPearson 两 seed 方向冲突（s3072 贴 0 微降、s42 显著提升）；raw MSE 改善主要由 bias 收窄贡献（SpaceTime bias -0.07~-0.10 vs mosaic -0.16~-0.18），触发 §6.2 bias 例外条款（要求两 seed Pearson 同向提升）未满足。
 
 ## 9. 执行前检查清单
 
@@ -186,7 +190,7 @@ OOD 上同时满足：
 - [x] 由统一入口固定 5cut/OOD 数据路径，并在评估 summary 中记录数据 root、revision 和可用时的 Hugging Face fingerprint；
 - [x] 自动生成每个数据集、每个 seed 的三方共同 endpoint 清单；
 - [x] 对所有比较显式传递模型 seed；
-- [ ] 跑完 paired bootstrap 后才填写结果表；
+- [x] 跑完 paired bootstrap 后才填写结果表；
 - [x] 汇总器先按 §6 自动判门禁，再唯一选择 §7 叙事分支；
 - [x] 汇总器只使用 OOD 门禁决定分支，5cut 不覆盖 OOD；
 - [x] direct vs staged 仅作为诊断输出，不参与主判定。
@@ -215,3 +219,30 @@ outputs/eval_spacetime_threeway/
 ## 11. 本计划之外
 
 matched-training 三臂因果消融仍作为后续增强实验，不与本轮系统级比较混在一起。本轮结果只支持系统级比较，不改变 §4 中对架构因果归因的限制。
+
+## 12. 结果记录（2026-09-21）
+
+执行入口 `bash 30_run_spacetime_threeway.sh` 全部完成，产物在 `outputs/eval_spacetime_threeway/`（含 `threeway_results.{json,md}`、endpoint manifests、全部 paired 比较 JSON）。
+
+### 12.1 门禁与分支
+
+- **spacetime vs baseline：PASS**（§6.1 四项全过，两 seed OOD ΔMSE/ΔcMSE/ΔPearson 全部显著同向改善）；
+- **spacetime vs mosaic：FAIL**——`pearson_non_decrease_both_seeds` 未过（s3072 点估计 -0.0109，CI [-0.0224, +0.0003] 贴 0）与 bias 例外条款（`bias_only_requires_two_seed_pearson_gain`）未过；
+- **预注册分支：D**（seed/指标方向冲突，证据不足）。按 §7-D：结论写为"不稳定、证据不足"，不选 A/B 强叙事，优先增加预注册 seed（下一 seed 1337：补 direct 训练 + 同 seed mosaic/baseline，重跑三方对照），不调门禁、不挑 checkpoint、不只报均值。
+
+### 12.2 teacher anchoring 诊断（direct vs staged，不参与主判定）
+
+与 §13.4 staged 版（不同 endpoint 口径，仅作趋势参考）对比：s3072 OOD MSE 0.0445→0.0333、Pearson 0.812→0.838（与 mosaic 的 Pearson 差距 -0.039 收窄至 -0.011）；s42 基本持平（0.0262→0.0247 / 0.851→0.851）。去掉 align/gate 蒸馏后 s3072 明显恢复，teacher anchoring 得到数据支持。逐比较数字见 `comparisons/{5cut,ood}_spacetime_vs_staged_s{3072,42}.json`。
+
+### 12.3 效率
+
+| seed | 模型 | 参数量 | 输入帧 | 视觉 token | forward ms/样本 | batch |
+|---:|---|---:|---:|---:|---:|---:|
+| 3072 | baseline | 170,604,289 | 1 | 1 | 6.947 | 4 |
+| 3072 | mosaic | 170,604,289 | 4 | 1 | 6.126 | 4 |
+| 3072 | spacetime | 176,126,211 | 8 | 64 | 12.924 | 4 |
+| 42 | baseline | 170,604,289 | 1 | 1 | 6.985 | 4 |
+| 42 | mosaic | 170,604,289 | 4 | 1 | 6.066 | 4 |
+| 42 | spacetime | 176,126,211 | 8 | 64 | 12.787 | 4 |
+
+SpaceTime forward ≈ mosaic 的 2.1×、baseline 的 1.9×；参数 +5.5M。按 §6 该数据只作效率说明，不参与门禁。
