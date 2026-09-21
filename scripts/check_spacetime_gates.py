@@ -49,7 +49,17 @@ def check_ood(paths: list[Path]) -> None:
         raise SystemExit("Two model seeds have opposite OOD MSE directions")
 
 
-def check_checkpoint(path: Path) -> None:
+def check_history_offsets(
+    actual_offsets: list[int], expected_offsets: list[int] | None, path: Path
+) -> None:
+    if expected_offsets is not None and actual_offsets != expected_offsets:
+        raise SystemExit(
+            f"Deploy checkpoint history offsets mismatch for {path}: "
+            f"{actual_offsets} != {expected_offsets}"
+        )
+
+
+def check_checkpoint(path: Path, history_offsets: list[int] | None = None) -> None:
     import torch
 
     payload = torch.load(path, map_location="cpu", weights_only=False)
@@ -65,6 +75,9 @@ def check_checkpoint(path: Path) -> None:
         raise SystemExit(f"Deploy gate must equal 1, got {gate}")
     if model_config["spacetime_teacher_enabled"] or data_config["history_mosaic"]:
         raise SystemExit("Deploy checkpoint still depends on the mosaic teacher")
+    check_history_offsets(
+        list(data_config.get("history_offsets") or []), history_offsets, path
+    )
 
 
 def run() -> None:
@@ -73,6 +86,7 @@ def run() -> None:
     parser.add_argument("--alignment-threshold", type=float, default=0.9)
     parser.add_argument("--ood", nargs=2, type=Path)
     parser.add_argument("--checkpoint", nargs="+", type=Path)
+    parser.add_argument("--history-offsets", nargs="+", type=int)
     args = parser.parse_args()
     if args.alignment:
         check_alignment(args.alignment, args.alignment_threshold)
@@ -80,7 +94,7 @@ def run() -> None:
         check_ood(args.ood)
     if args.checkpoint:
         for path in args.checkpoint:
-            check_checkpoint(path)
+            check_checkpoint(path, args.history_offsets)
     if not args.alignment and not args.ood and not args.checkpoint:
         parser.error("provide --alignment, --ood, or --checkpoint")
 

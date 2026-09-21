@@ -1,4 +1,5 @@
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
 from world_critic.config import (
@@ -174,6 +175,26 @@ class RegisterConfigValidationTest(unittest.TestCase):
 
         self.assertEqual(config.data.history_offsets, [0, 4, 8, 12, 16, 20, 24, 28])
         self.assertEqual(config.model.spacetime_frame_count, 8)
+
+    def test_t120_ablation_changes_only_history_offsets(self):
+        for stage in ("direct", "direct_full"):
+            with self.subTest(stage=stage):
+                baseline = load_config(f"configs/wcm_spacetime_{stage}.yaml")
+                candidate = deepcopy(baseline)
+                with patch.dict(
+                    "os.environ",
+                    {"WCM_HISTORY_OFFSETS": "0,17,34,51,69,86,103,120"},
+                    clear=True,
+                ):
+                    apply_runtime_overrides(candidate)
+
+                self.assertEqual(
+                    candidate.data.history_offsets,
+                    [0, 17, 34, 51, 69, 86, 103, 120],
+                )
+                validate_train_config(candidate)
+                candidate.data.history_offsets = baseline.data.history_offsets
+                self.assertEqual(candidate, baseline)
 
     def test_shipped_spacetime_stage_configs_are_valid(self):
         for stage in ("align", "gate", "joint", "full", "direct", "direct_full"):

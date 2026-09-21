@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.check_spacetime_gates import check_alignment
+from scripts.check_spacetime_gates import check_alignment, check_history_offsets
 
 
 class SpaceTimeGateCheckTest(unittest.TestCase):
@@ -35,6 +35,17 @@ class SpaceTimeGateCheckTest(unittest.TestCase):
     def test_alignment_rejects_non_finite_cosine(self):
         with self.assertRaises(SystemExit):
             check_alignment([self.write_summary(best_validation_cosine=float("nan"))])
+
+    def test_checkpoint_history_offsets_match_t120(self):
+        expected = [0, 17, 34, 51, 69, 86, 103, 120]
+        check_history_offsets(expected, expected, Path("deploy.pt"))
+
+        with self.assertRaisesRegex(SystemExit, "history offsets mismatch"):
+            check_history_offsets(
+                [0, 9, 17, 26, 34, 43, 51, 60],
+                expected,
+                Path("deploy.pt"),
+            )
 
 
 if __name__ == "__main__":
