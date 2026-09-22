@@ -639,3 +639,27 @@ direct 双 seed（`wcm_spacetime_vit_t8_direct_full_s{3072,42}`）已训完，�
 **结论**：direct 消融未推翻 mosaic 主叙事，也未终结 SpaceTime 线——teacher anchoring 确认存在且去除后 s3072 明显恢复，但 Pearson 在 s3072 仍贴 0 微降、centered MSE 未跟上，双 seed 证据不足。按分支 D 预注册方案：**不调门禁、不挑 checkpoint，增加 seed**（下一 seed 1337：补 direct 训练 + 同 seed mosaic/baseline 后重跑三方对照）。
 
 结果文件：`outputs/eval_spacetime_threeway/threeway_results.{json,md}`。
+
+### 13.7 T120 时间跨度扩展（2026-09-22，双 seed）
+
+t60 direct 落在分支 D 后，未改门禁，而是测试**时间跨度假设**：历史窗口 60 步 → 120 步（offsets `0,17,34,51,69,86,103,120`，仍 8 帧 / 64 token，参数与推理代价不变），从对应 seed 的 Image-B4 mosaic checkpoint partial init（`WCM_INIT_FROM`，与 t60 协议一致）。脚本 `31_run_spacetime_t120_pair.sh`，对照 t60（`wcm_spacetime_vit_t8_direct_full_s{3072,42}`）与 mosaic（`wcm_sparse4_image_b4_exp_s{3072,42}`），episode-paired bootstrap 20000 次，5cut 145 集/28017 点、OOD 125 集/22082 点。
+
+**OOD paired 结果（Δ=t120−对照）**：
+
+| 对照 | seed | ΔMSE [CI95] | ΔPearson [CI95] | Δbias |
+|---|---:|---|---|---|
+| mosaic | 3072 | **-0.0189** [-0.0209, -0.0168] | **+0.0188** [+0.0065, +0.0330] | -0.165→-0.095 |
+| mosaic | 42 | **-0.0325** [-0.0354, -0.0294] | **+0.0197** [+0.0003, +0.0392] | -0.183→-0.069 |
+| t60 | 3072 | **-0.0069** [-0.0089, -0.0050] | **+0.0297** [+0.0184, +0.0434] | -0.098→-0.095 |
+| t60 | 42 | **-0.0040** [-0.0055, -0.0026] | +0.0045 [-0.0058, +0.0164] | -0.074→-0.069 |
+
+5cut：vs mosaic 两 seed 显著优（ΔMSE -0.0009/-0.0014，ΔPearson +0.011/+0.012）；vs t60 打平。绝对值（OOD）：t120 MSE 0.0267/0.0209、Pearson 0.869/0.856。
+
+**判定**：
+- **vs mosaic 通过 §6.2 强基线门禁**——两 seed OOD ΔMSE CI 全负、ΔPearson 同向且 CI 下界 >0、cMSE 同向改善（-0.0007/-0.0037），非 bias-only。这是 SpaceTime 线首次双 seed 全面超过 mosaic；
+- **vs t60**：OOD MSE 两 seed 一致改善，Pearson s3072 显著 / s42 不显著——**历史跨度 60→120 步带来一致性 OOD 增益，推理代价零增加**（仍 8 帧/64 token/约 12.9 ms）；
+- **归因限制**：T120 仍从 mosaic checkpoint 初始化，§4 措辞约束不变（系统级优于 mosaic，非纯架构增益）。
+
+**预注册纪律警示**：T120 是在 t60 落分支 D **之后**才定义的变体（事后假设搜索），虽双 seed 全过门禁，切分支 A 叙事（"SpaceTime 超过 mosaic"）前应补 seed 1337 的 T120 确认（direct + direct_full 两阶段），避免 garden-of-forking-paths。
+
+结果文件：`outputs/eval_spacetime_t120_pair/comparisons/{5cut,ood}_t120_vs_{mosaic,t60}_s{3072,42}.json`。
