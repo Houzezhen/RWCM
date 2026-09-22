@@ -167,8 +167,21 @@ class TemporalInputTest(unittest.TestCase):
         self.assertEqual(int(mosaic[2, 0, 0]), 2)
         self.assertEqual(int(mosaic[2, 3, 0]), 3)
 
-    def test_mosaic_requires_four_frames(self):
-        with self.assertRaisesRegex(ValueError, "exactly four"):
+    def test_eight_frame_mosaic_layout(self):
+        frames = [
+            torch.full((2, 3, 1), value, dtype=torch.uint8)
+            for value in range(8)
+        ]
+        mosaic = _make_temporal_mosaic(frames)
+
+        self.assertEqual(tuple(mosaic.shape), (4, 12, 1))
+        self.assertEqual(int(mosaic[0, 0, 0]), 0)
+        self.assertEqual(int(mosaic[0, 9, 0]), 3)
+        self.assertEqual(int(mosaic[2, 0, 0]), 4)
+        self.assertEqual(int(mosaic[2, 9, 0]), 7)
+
+    def test_mosaic_requires_even_frame_count(self):
+        with self.assertRaisesRegex(ValueError, "even number"):
             _make_temporal_mosaic([torch.zeros(2, 3, 1)] * 3)
 
     def test_sparse_cross_frame_encoder_shape_and_gradient(self):

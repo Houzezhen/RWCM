@@ -117,18 +117,21 @@ def _image_to_hwc(value: Any) -> torch.Tensor:
 
 
 def _make_temporal_mosaic(images: list[Any]) -> torch.Tensor:
-    """Tile [current, older1, older2, older3] into a 2x2 HWC image."""
+    """Tile an even number of temporal images into a two-row HWC mosaic."""
 
-    if len(images) != 4:
-        raise ValueError(f"Temporal mosaic requires exactly four images, got {len(images)}.")
+    if len(images) < 2 or len(images) % 2:
+        raise ValueError(
+            f"Temporal mosaic requires an even number of images, got {len(images)}."
+        )
     frames = [_image_to_hwc(image) for image in images]
     height, width, channels = frames[0].shape
     if any(frame.shape != (height, width, channels) for frame in frames[1:]):
         raise ValueError("Temporal mosaic frames must have identical HWC shapes.")
+    columns = len(frames) // 2
     return torch.cat(
         [
-            torch.cat([frames[0], frames[1]], dim=1),
-            torch.cat([frames[2], frames[3]], dim=1),
+            torch.cat(frames[:columns], dim=1),
+            torch.cat(frames[columns:], dim=1),
         ],
         dim=0,
     )

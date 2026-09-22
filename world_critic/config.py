@@ -427,9 +427,9 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError("data.history_size must be 1 when data.history_offsets is configured.")
         mosaic_offsets = config.data.mosaic_history_offsets or offsets
         if config.data.history_mosaic:
-            if len(mosaic_offsets) != 4:
+            if len(mosaic_offsets) not in (4, 8):
                 raise ValueError(
-                    "data.history_mosaic requires exactly four mosaic_history_offsets."
+                    "data.history_mosaic requires four or eight mosaic_history_offsets."
                 )
             if mosaic_offsets[0] != 0:
                 raise ValueError("data.mosaic_history_offsets must start with 0.")
