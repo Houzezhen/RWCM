@@ -1,0 +1,1343 @@
+{
+  "protocol": {
+    "datasets": [
+      "5cut",
+      "ood"
+    ],
+    "seeds": [
+      3072,
+      42
+    ],
+    "bootstrap_samples": 20000,
+    "bootstrap_seed_policy": "model_seed",
+    "primary_decision_dataset": "ood",
+    "alignment": "three_primary_models_common_endpoints"
+  },
+  "endpoint_manifests": {
+    "5cut": {
+      "3072": {
+        "dataset": "5cut",
+        "seed": 3072,
+        "roles": [
+          "baseline",
+          "mosaic",
+          "spacetime"
+        ],
+        "source_endpoint_counts": {
+          "baseline": 27727,
+          "mosaic": 28017,
+          "spacetime": 28017
+        },
+        "common_episodes": 145,
+        "common_endpoints": 27727,
+        "dropped_endpoints": {
+          "baseline": 0,
+          "mosaic": 290,
+          "spacetime": 290
+        },
+        "target_consistency": {
+          "checked_endpoints": 27727,
+          "mismatched_endpoints": 0,
+          "absolute_tolerance": 1e-08
+        },
+        "path": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s3072.json"
+      },
+      "42": {
+        "dataset": "5cut",
+        "seed": 42,
+        "roles": [
+          "baseline",
+          "mosaic",
+          "spacetime"
+        ],
+        "source_endpoint_counts": {
+          "baseline": 27727,
+          "mosaic": 28017,
+          "spacetime": 28017
+        },
+        "common_episodes": 145,
+        "common_endpoints": 27727,
+        "dropped_endpoints": {
+          "baseline": 0,
+          "mosaic": 290,
+          "spacetime": 290
+        },
+        "target_consistency": {
+          "checked_endpoints": 27727,
+          "mismatched_endpoints": 0,
+          "absolute_tolerance": 1e-08
+        },
+        "path": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s42.json"
+      }
+    },
+    "ood": {
+      "3072": {
+        "dataset": "ood",
+        "seed": 3072,
+        "roles": [
+          "baseline",
+          "mosaic",
+          "spacetime"
+        ],
+        "source_endpoint_counts": {
+          "baseline": 21832,
+          "mosaic": 22082,
+          "spacetime": 22082
+        },
+        "common_episodes": 125,
+        "common_endpoints": 21832,
+        "dropped_endpoints": {
+          "baseline": 0,
+          "mosaic": 250,
+          "spacetime": 250
+        },
+        "target_consistency": {
+          "checked_endpoints": 21832,
+          "mismatched_endpoints": 0,
+          "absolute_tolerance": 1e-08
+        },
+        "path": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s3072.json"
+      },
+      "42": {
+        "dataset": "ood",
+        "seed": 42,
+        "roles": [
+          "baseline",
+          "mosaic",
+          "spacetime"
+        ],
+        "source_endpoint_counts": {
+          "baseline": 21832,
+          "mosaic": 22082,
+          "spacetime": 22082
+        },
+        "common_episodes": 125,
+        "common_endpoints": 21832,
+        "dropped_endpoints": {
+          "baseline": 0,
+          "mosaic": 250,
+          "spacetime": 250
+        },
+        "target_consistency": {
+          "checked_endpoints": 21832,
+          "mismatched_endpoints": 0,
+          "absolute_tolerance": 1e-08
+        },
+        "path": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s42.json"
+      }
+    }
+  },
+  "dataset_provenance": {
+    "5cut": {
+      "3072": {
+        "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+        "revision": null,
+        "fingerprint": null,
+        "roles": {
+          "baseline": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "mosaic": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "spacetime": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "staged": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          }
+        }
+      },
+      "42": {
+        "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+        "revision": null,
+        "fingerprint": null,
+        "roles": {
+          "baseline": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "mosaic": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "spacetime": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "staged": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/toiletButton_0814_5cut_test_with_return",
+            "revision": null,
+            "fingerprint": null
+          }
+        }
+      }
+    },
+    "ood": {
+      "3072": {
+        "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+        "revision": null,
+        "fingerprint": null,
+        "roles": {
+          "baseline": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "mosaic": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "spacetime": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "staged": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          }
+        }
+      },
+      "42": {
+        "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+        "revision": null,
+        "fingerprint": null,
+        "roles": {
+          "baseline": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "mosaic": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "spacetime": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          },
+          "staged": {
+            "repo_id": "data_toiletButton_0814_expanded_with_return",
+            "root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0722_with_return",
+            "revision": null,
+            "fingerprint": null
+          }
+        }
+      }
+    }
+  },
+  "absolute_metrics": {
+    "5cut": {
+      "3072": {
+        "baseline": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.04054274083533411,
+          "pearson": 0.3348013801230585,
+          "mean_bias": -0.005178311723532143,
+          "centered_mse": 0.04051592592302804
+        },
+        "mosaic": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.01087894037819002,
+          "pearson": 0.8572613525253776,
+          "mean_bias": -0.026989652932777292,
+          "centered_mse": 0.010150499012758246
+        },
+        "spacetime": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.009992760816304291,
+          "pearson": 0.8733687684752856,
+          "mean_bias": -0.02172881208873637,
+          "centered_mse": 0.009520619541516676
+        },
+        "staged": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.01348456396905812,
+          "pearson": 0.8582726997241605,
+          "mean_bias": -0.04505067601079212,
+          "centered_mse": 0.01145500056002876
+        },
+        "efficiency": {
+          "baseline": {
+            "input_frames": 1,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 6.9868500374146585,
+            "latency_batch_size": 4
+          },
+          "mosaic": {
+            "input_frames": 4,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 6.099713315935492,
+            "latency_batch_size": 4
+          },
+          "spacetime": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176126211,
+            "forward_ms_per_sample": 12.752859317724942,
+            "latency_batch_size": 4
+          },
+          "staged": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176124675,
+            "forward_ms_per_sample": 12.640700243225435,
+            "latency_batch_size": 4
+          }
+        }
+      },
+      "42": {
+        "baseline": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.036748568023033015,
+          "pearson": 0.4070650778522906,
+          "mean_bias": 0.005586612930959169,
+          "centered_mse": 0.036717357778992654
+        },
+        "mosaic": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.011137405929862336,
+          "pearson": 0.8572863543590413,
+          "mean_bias": -0.03197376437677817,
+          "centered_mse": 0.010115084321440607
+        },
+        "spacetime": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.009441351379226347,
+          "pearson": 0.8705776683059789,
+          "mean_bias": -0.01633619731505083,
+          "centered_mse": 0.009174480036510073
+        },
+        "staged": {
+          "episodes": 145,
+          "endpoints": 27727,
+          "mse": 0.009159982579296299,
+          "pearson": 0.8772932075533141,
+          "mean_bias": -0.017848626753082155,
+          "centered_mse": 0.008841409102325459
+        },
+        "efficiency": {
+          "baseline": {
+            "input_frames": 1,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 7.003454512151986,
+            "latency_batch_size": 4
+          },
+          "mosaic": {
+            "input_frames": 4,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 6.008914759273375,
+            "latency_batch_size": 4
+          },
+          "spacetime": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176126211,
+            "forward_ms_per_sample": 12.701217769823362,
+            "latency_batch_size": 4
+          },
+          "staged": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176124675,
+            "forward_ms_per_sample": 12.702878996209158,
+            "latency_batch_size": 4
+          }
+        }
+      }
+    },
+    "ood": {
+      "3072": {
+        "baseline": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.15167172259692738,
+          "pearson": 0.13992303821257662,
+          "mean_bias": -0.2872930619785756,
+          "centered_mse": 0.06913441913590168
+        },
+        "mosaic": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.0452404767920099,
+          "pearson": 0.8491753335025871,
+          "mean_bias": -0.16406324645459563,
+          "centered_mse": 0.01832372795478851
+        },
+        "spacetime": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.03334234005926043,
+          "pearson": 0.8382613597586099,
+          "mean_bias": -0.09738718429907522,
+          "centered_mse": 0.023858076393558386
+        },
+        "staged": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.04436018735769201,
+          "pearson": 0.8100500057390374,
+          "mean_bias": -0.128038687062998,
+          "centered_mse": 0.02796628197287568
+        },
+        "efficiency": {
+          "baseline": {
+            "input_frames": 1,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 6.946706046722625,
+            "latency_batch_size": 4
+          },
+          "mosaic": {
+            "input_frames": 4,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 6.126154916267682,
+            "latency_batch_size": 4
+          },
+          "spacetime": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176126211,
+            "forward_ms_per_sample": 12.923845279045095,
+            "latency_batch_size": 4
+          },
+          "staged": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176124675,
+            "forward_ms_per_sample": 12.806983368863836,
+            "latency_batch_size": 4
+          }
+        }
+      },
+      "42": {
+        "baseline": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.1103551092774453,
+          "pearson": 0.22557584510353895,
+          "mean_bias": -0.22836728374790363,
+          "centered_mse": 0.058203492991049766
+        },
+        "mosaic": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.052938231184304775,
+          "pearson": 0.8341166911007252,
+          "mean_bias": -0.18205620475548423,
+          "centered_mse": 0.01979376949433398
+        },
+        "spacetime": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.024672952878480484,
+          "pearson": 0.850665662434754,
+          "mean_bias": -0.07278532124912031,
+          "centered_mse": 0.01937524988914284
+        },
+        "staged": {
+          "episodes": 125,
+          "endpoints": 21832,
+          "mse": 0.02601856410620957,
+          "pearson": 0.8521644644818854,
+          "mean_bias": -0.0885964740026043,
+          "centered_mse": 0.01816922890051543
+        },
+        "efficiency": {
+          "baseline": {
+            "input_frames": 1,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 6.984508877230372,
+            "latency_batch_size": 4
+          },
+          "mosaic": {
+            "input_frames": 4,
+            "visual_tokens": 1,
+            "parameters": 170604289,
+            "forward_ms_per_sample": 6.066100840572429,
+            "latency_batch_size": 4
+          },
+          "spacetime": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176126211,
+            "forward_ms_per_sample": 12.786585578991012,
+            "latency_batch_size": 4
+          },
+          "staged": {
+            "input_frames": 8,
+            "visual_tokens": 64,
+            "parameters": 176124675,
+            "forward_ms_per_sample": 12.728053755371935,
+            "latency_batch_size": 4
+          }
+        }
+      }
+    }
+  },
+  "comparisons": {
+    "5cut": {
+      "3072": {
+        "spacetime_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/baseline_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/spacetime_s3072/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s3072.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.04054274083533411,
+          "candidate_mse": 0.009992760816304291,
+          "mse_difference_candidate_minus_baseline": -0.030549980019029817,
+          "relative_mse_change": -0.7535252770183873,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.037844617469900074,
+            -0.024519749804917067
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.037844617469900074,
+            -0.024519749804917067
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.04051592592302804,
+          "candidate_centered_mse": 0.009520619541516676,
+          "centered_mse_difference_candidate_minus_baseline": -0.03099530638151136,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.038093696325635154,
+            -0.024946063917571808
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.3348013801230585,
+          "candidate_pearson": 0.8733687684752856,
+          "pearson_difference_candidate_minus_baseline": 0.5385673883522271,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.45919947045355824,
+            0.6255007125624517
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.005178311723532143,
+          "candidate_mean_bias": -0.02172881208873637,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        },
+        "spacetime_vs_mosaic": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/mosaic_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/spacetime_s3072/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s3072.json",
+          "dropped_baseline_endpoints": 290,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.01087894037819002,
+          "candidate_mse": 0.009992760816304291,
+          "mse_difference_candidate_minus_baseline": -0.000886179561885728,
+          "relative_mse_change": -0.08145826073854869,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.0015366487506336777,
+            -0.00028806067815293043
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.0015366487506336777,
+            -0.00028806067815293043
+          ],
+          "probability_candidate_lower_mse": 0.9986,
+          "baseline_centered_mse": 0.010150499012758246,
+          "candidate_centered_mse": 0.009520619541516676,
+          "centered_mse_difference_candidate_minus_baseline": -0.0006298794712415699,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.001279956094220364,
+            -2.4296244428946107e-05
+          ],
+          "probability_candidate_lower_centered_mse": 0.97905,
+          "baseline_pearson": 0.8572613525253776,
+          "candidate_pearson": 0.8733687684752856,
+          "pearson_difference_candidate_minus_baseline": 0.016107415949907944,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.007891375088743015,
+            0.024588810555614127
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.026989652932777292,
+          "candidate_mean_bias": -0.02172881208873637,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        },
+        "spacetime_vs_staged": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/staged_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/spacetime_s3072/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s3072.json",
+          "dropped_baseline_endpoints": 290,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.01348456396905812,
+          "candidate_mse": 0.009992760816304291,
+          "mse_difference_candidate_minus_baseline": -0.0034918031527538286,
+          "relative_mse_change": -0.2589481692375202,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.004668701170665645,
+            -0.002431798904474296
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.004668701170665645,
+            -0.002431798904474296
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.01145500056002876,
+          "candidate_centered_mse": 0.009520619541516676,
+          "centered_mse_difference_candidate_minus_baseline": -0.0019343810185120831,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.002877196482395416,
+            -0.0010878464548418245
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.8582726997241605,
+          "candidate_pearson": 0.8733687684752856,
+          "pearson_difference_candidate_minus_baseline": 0.015096068751125014,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.0048076080062773,
+            0.026411243305357653
+          ],
+          "probability_candidate_higher_pearson": 0.99785,
+          "baseline_mean_bias": -0.04505067601079212,
+          "candidate_mean_bias": -0.02172881208873637,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        },
+        "mosaic_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/baseline_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/mosaic_s3072/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s3072.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.04054274083533411,
+          "candidate_mse": 0.01087894037819002,
+          "mse_difference_candidate_minus_baseline": -0.02966380045714409,
+          "relative_mse_change": -0.7316673674733721,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.03691330035701553,
+            -0.023714245987869687
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.03691330035701553,
+            -0.023714245987869687
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.04051592592302804,
+          "candidate_centered_mse": 0.010150499012758246,
+          "centered_mse_difference_candidate_minus_baseline": -0.03036542691026979,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.037438891837493854,
+            -0.024452255132663196
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.3348013801230585,
+          "candidate_pearson": 0.8572613525253776,
+          "pearson_difference_candidate_minus_baseline": 0.5224599724023191,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.4426606361078497,
+            0.6121733656655001
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.005178311723532143,
+          "candidate_mean_bias": -0.026989652932777292,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        }
+      },
+      "42": {
+        "spacetime_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/baseline_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/spacetime_s42/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s42.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.036748568023033015,
+          "candidate_mse": 0.009441351379226347,
+          "mse_difference_candidate_minus_baseline": -0.02730721664380667,
+          "relative_mse_change": -0.7430824685928236,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.03447081003867238,
+            -0.02179197399027076
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.03447081003867238,
+            -0.02179197399027076
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.036717357778992654,
+          "candidate_centered_mse": 0.009174480036510073,
+          "centered_mse_difference_candidate_minus_baseline": -0.027542877742482583,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.034316078134768765,
+            -0.022254053490349777
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.4070650778522906,
+          "candidate_pearson": 0.8705776683059789,
+          "pearson_difference_candidate_minus_baseline": 0.4635125904536883,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.3908772276852624,
+            0.5488426335724067
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": 0.005586612930959169,
+          "candidate_mean_bias": -0.01633619731505083,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        },
+        "spacetime_vs_mosaic": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/mosaic_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/spacetime_s42/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s42.json",
+          "dropped_baseline_endpoints": 290,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.011137405929862336,
+          "candidate_mse": 0.009441351379226347,
+          "mse_difference_candidate_minus_baseline": -0.0016960545506359889,
+          "relative_mse_change": -0.15228452310321358,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.0024194024116926693,
+            -0.0010235258387759618
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.0024194024116926693,
+            -0.0010235258387759618
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.010115084321440607,
+          "candidate_centered_mse": 0.009174480036510073,
+          "centered_mse_difference_candidate_minus_baseline": -0.0009406042849305334,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.0014659590080120688,
+            -0.0004342870693799946
+          ],
+          "probability_candidate_lower_centered_mse": 0.99985,
+          "baseline_pearson": 0.8572863543590413,
+          "candidate_pearson": 0.8705776683059789,
+          "pearson_difference_candidate_minus_baseline": 0.01329131394693761,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.006476655793203723,
+            0.020328146938400307
+          ],
+          "probability_candidate_higher_pearson": 0.99995,
+          "baseline_mean_bias": -0.03197376437677817,
+          "candidate_mean_bias": -0.01633619731505083,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        },
+        "spacetime_vs_staged": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/staged_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/spacetime_s42/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s42.json",
+          "dropped_baseline_endpoints": 290,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.009159982579296299,
+          "candidate_mse": 0.009441351379226347,
+          "mse_difference_candidate_minus_baseline": 0.00028136879993004814,
+          "relative_mse_change": 0.030717176314942713,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.0004348798567285493,
+            0.0010062474827614314
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.0004348798567285493,
+            0.0010062474827614314
+          ],
+          "probability_candidate_lower_mse": 0.2268,
+          "baseline_centered_mse": 0.008841409102325459,
+          "candidate_centered_mse": 0.009174480036510073,
+          "centered_mse_difference_candidate_minus_baseline": 0.00033307093418461463,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.0003688909258284737,
+            0.001053375759940807
+          ],
+          "probability_candidate_lower_centered_mse": 0.185,
+          "baseline_pearson": 0.8772932075533141,
+          "candidate_pearson": 0.8705776683059789,
+          "pearson_difference_candidate_minus_baseline": -0.006715539247335145,
+          "pearson_paired_episode_bootstrap_ci95": [
+            -0.016797141295169547,
+            0.003141466012361504
+          ],
+          "probability_candidate_higher_pearson": 0.0953,
+          "baseline_mean_bias": -0.017848626753082155,
+          "candidate_mean_bias": -0.01633619731505083,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        },
+        "mosaic_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/baseline_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/5cut/mosaic_s42/episode_curves/episode_curves.csv",
+          "episodes": 145,
+          "endpoints": 27727,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/5cut_threeway_s42.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 290,
+          "target_consistency": {
+            "checked_endpoints": 27727,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.036748568023033015,
+          "candidate_mse": 0.011137405929862336,
+          "mse_difference_candidate_minus_baseline": -0.02561116209317068,
+          "relative_mse_change": -0.6969295259918235,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.03285165672786839,
+            -0.019897302996079676
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.03285165672786839,
+            -0.019897302996079676
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.036717357778992654,
+          "candidate_centered_mse": 0.010115084321440607,
+          "centered_mse_difference_candidate_minus_baseline": -0.026602273457552048,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.033335583595397685,
+            -0.02134299042437756
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.4070650778522906,
+          "candidate_pearson": 0.8572863543590413,
+          "pearson_difference_candidate_minus_baseline": 0.4502212765067507,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.3779566032411532,
+            0.5362510346387239
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": 0.005586612930959169,
+          "candidate_mean_bias": -0.03197376437677817,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        }
+      }
+    },
+    "ood": {
+      "3072": {
+        "spacetime_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/baseline_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/spacetime_s3072/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s3072.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.15167172259692738,
+          "candidate_mse": 0.03334234005926043,
+          "mse_difference_candidate_minus_baseline": -0.11832938253766695,
+          "relative_mse_change": -0.7801677234993315,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.1261759805264246,
+            -0.11059802108885426
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.1261759805264246,
+            -0.11059802108885426
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.06913441913590168,
+          "candidate_centered_mse": 0.023858076393558386,
+          "centered_mse_difference_candidate_minus_baseline": -0.045276342742343295,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.049377856779756694,
+            -0.04118938061072785
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.13992303821257662,
+          "candidate_pearson": 0.8382613597586099,
+          "pearson_difference_candidate_minus_baseline": 0.6983383215460333,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.6558110092709709,
+            0.7450047379765581
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.2872930619785756,
+          "candidate_mean_bias": -0.09738718429907522,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        },
+        "spacetime_vs_mosaic": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/mosaic_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/spacetime_s3072/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s3072.json",
+          "dropped_baseline_endpoints": 250,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.0452404767920099,
+          "candidate_mse": 0.03334234005926043,
+          "mse_difference_candidate_minus_baseline": -0.011898136732749469,
+          "relative_mse_change": -0.262997598090099,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.014101604327800015,
+            -0.009533606106789515
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.014101604327800015,
+            -0.009533606106789515
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.01832372795478851,
+          "candidate_centered_mse": 0.023858076393558386,
+          "centered_mse_difference_candidate_minus_baseline": 0.005534348438769876,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            0.004207761820350969,
+            0.006972474155195718
+          ],
+          "probability_candidate_lower_centered_mse": 0.0,
+          "baseline_pearson": 0.8491753335025871,
+          "candidate_pearson": 0.8382613597586099,
+          "pearson_difference_candidate_minus_baseline": -0.010913973743977179,
+          "pearson_paired_episode_bootstrap_ci95": [
+            -0.02235218759255989,
+            0.0002690911642818844
+          ],
+          "probability_candidate_higher_pearson": 0.0278,
+          "baseline_mean_bias": -0.16406324645459563,
+          "candidate_mean_bias": -0.09738718429907522,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        },
+        "spacetime_vs_staged": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/staged_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/spacetime_s3072/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s3072.json",
+          "dropped_baseline_endpoints": 250,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.04436018735769201,
+          "candidate_mse": 0.03334234005926043,
+          "mse_difference_candidate_minus_baseline": -0.011017847298431582,
+          "relative_mse_change": -0.2483724247959268,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.013628913467131739,
+            -0.008369016254540597
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.013628913467131739,
+            -0.008369016254540597
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.02796628197287568,
+          "candidate_centered_mse": 0.023858076393558386,
+          "centered_mse_difference_candidate_minus_baseline": -0.004108205579317292,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.005817330865569365,
+            -0.002415498853475424
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.8100500057390374,
+          "candidate_pearson": 0.8382613597586099,
+          "pearson_difference_candidate_minus_baseline": 0.028211354019572532,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.013504199477002637,
+            0.04473013076242735
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.128038687062998,
+          "candidate_mean_bias": -0.09738718429907522,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        },
+        "mosaic_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/baseline_s3072/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/mosaic_s3072/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s3072.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.15167172259692738,
+          "candidate_mse": 0.0452404767920099,
+          "mse_difference_candidate_minus_baseline": -0.10643124580491747,
+          "relative_mse_change": -0.7017210853981136,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.11381653499913796,
+            -0.09917840746491484
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.11381653499913796,
+            -0.09917840746491484
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.06913441913590168,
+          "candidate_centered_mse": 0.01832372795478851,
+          "centered_mse_difference_candidate_minus_baseline": -0.05081069118111317,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.055040870421765774,
+            -0.046691405797001
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.13992303821257662,
+          "candidate_pearson": 0.8491753335025871,
+          "pearson_difference_candidate_minus_baseline": 0.7092522952900104,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.6668276544205404,
+            0.7552741374743741
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.2872930619785756,
+          "candidate_mean_bias": -0.16406324645459563,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 3072,
+          "seed": 3072
+        }
+      },
+      "42": {
+        "spacetime_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/baseline_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/spacetime_s42/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s42.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.1103551092774453,
+          "candidate_mse": 0.024672952878480484,
+          "mse_difference_candidate_minus_baseline": -0.08568215639896481,
+          "relative_mse_change": -0.7764221970325826,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.09314069512455878,
+            -0.07848809497770008
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.09314069512455878,
+            -0.07848809497770008
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.058203492991049766,
+          "candidate_centered_mse": 0.01937524988914284,
+          "centered_mse_difference_candidate_minus_baseline": -0.038828243101906926,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.04275682439417435,
+            -0.034787360992338125
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.22557584510353895,
+          "candidate_pearson": 0.850665662434754,
+          "pearson_difference_candidate_minus_baseline": 0.6250898173312152,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.5676396227915912,
+            0.6872119763218705
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.22836728374790363,
+          "candidate_mean_bias": -0.07278532124912031,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        },
+        "spacetime_vs_mosaic": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/mosaic_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/spacetime_s42/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s42.json",
+          "dropped_baseline_endpoints": 250,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.052938231184304775,
+          "candidate_mse": 0.024672952878480484,
+          "mse_difference_candidate_minus_baseline": -0.02826527830582429,
+          "relative_mse_change": -0.5339294055258204,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.031126614558608663,
+            -0.02538517118175633
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.031126614558608663,
+            -0.02538517118175633
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.01979376949433398,
+          "candidate_centered_mse": 0.01937524988914284,
+          "centered_mse_difference_candidate_minus_baseline": -0.0004185196051911394,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.002107748219660459,
+            0.0013604477445771771
+          ],
+          "probability_candidate_lower_centered_mse": 0.6882,
+          "baseline_pearson": 0.8341166911007252,
+          "candidate_pearson": 0.850665662434754,
+          "pearson_difference_candidate_minus_baseline": 0.016548971334028884,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.004061526263264961,
+            0.028821445231191425
+          ],
+          "probability_candidate_higher_pearson": 0.99495,
+          "baseline_mean_bias": -0.18205620475548423,
+          "candidate_mean_bias": -0.07278532124912031,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        },
+        "spacetime_vs_staged": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/staged_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/spacetime_s42/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s42.json",
+          "dropped_baseline_endpoints": 250,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.02601856410620957,
+          "candidate_mse": 0.024672952878480484,
+          "mse_difference_candidate_minus_baseline": -0.0013456112277290856,
+          "relative_mse_change": -0.051717351589280945,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.003207756768993272,
+            0.0005254031636165481
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.003207756768993272,
+            0.0005254031636165481
+          ],
+          "probability_candidate_lower_mse": 0.92045,
+          "baseline_centered_mse": 0.01816922890051543,
+          "candidate_centered_mse": 0.01937524988914284,
+          "centered_mse_difference_candidate_minus_baseline": 0.0012060209886274112,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.0003687258248379899,
+            0.0027971194000657234
+          ],
+          "probability_candidate_lower_centered_mse": 0.0661,
+          "baseline_pearson": 0.8521644644818854,
+          "candidate_pearson": 0.850665662434754,
+          "pearson_difference_candidate_minus_baseline": -0.0014988020471313757,
+          "pearson_paired_episode_bootstrap_ci95": [
+            -0.018535123422533096,
+            0.016364186763869262
+          ],
+          "probability_candidate_higher_pearson": 0.43695,
+          "baseline_mean_bias": -0.0885964740026043,
+          "candidate_mean_bias": -0.07278532124912031,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        },
+        "mosaic_vs_baseline": {
+          "baseline": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/baseline_s42/episode_curves/episode_curves.csv",
+          "candidate": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/ood/mosaic_s42/episode_curves/episode_curves.csv",
+          "episodes": 125,
+          "endpoints": 21832,
+          "alignment": "manifest",
+          "endpoint_manifest": "/home/user/code_1/WCM/outputs/eval_spacetime_threeway/endpoint_manifests/ood_threeway_s42.json",
+          "dropped_baseline_endpoints": 0,
+          "dropped_candidate_endpoints": 250,
+          "target_consistency": {
+            "checked_endpoints": 21832,
+            "mismatched_endpoints": 0,
+            "absolute_tolerance": 1e-08
+          },
+          "baseline_mse": 0.1103551092774453,
+          "candidate_mse": 0.052938231184304775,
+          "mse_difference_candidate_minus_baseline": -0.05741687809314052,
+          "relative_mse_change": -0.5202919780432455,
+          "mse_paired_episode_bootstrap_ci95": [
+            -0.06418857623566376,
+            -0.0506782115039905
+          ],
+          "paired_episode_bootstrap_ci95": [
+            -0.06418857623566376,
+            -0.0506782115039905
+          ],
+          "probability_candidate_lower_mse": 1.0,
+          "baseline_centered_mse": 0.058203492991049766,
+          "candidate_centered_mse": 0.01979376949433398,
+          "centered_mse_difference_candidate_minus_baseline": -0.038409723496715786,
+          "centered_mse_paired_episode_bootstrap_ci95": [
+            -0.042172915370961066,
+            -0.034659211191234586
+          ],
+          "probability_candidate_lower_centered_mse": 1.0,
+          "baseline_pearson": 0.22557584510353895,
+          "candidate_pearson": 0.8341166911007252,
+          "pearson_difference_candidate_minus_baseline": 0.6085408459971862,
+          "pearson_paired_episode_bootstrap_ci95": [
+            0.5548805421879713,
+            0.6651144018113669
+          ],
+          "probability_candidate_higher_pearson": 1.0,
+          "baseline_mean_bias": -0.22836728374790363,
+          "candidate_mean_bias": -0.18205620475548423,
+          "bootstrap_samples": 20000,
+          "bootstrap_seed": 42,
+          "seed": 42
+        }
+      }
+    }
+  },
+  "gates": {
+    "spacetime_vs_baseline": {
+      "passed": true,
+      "checks": {
+        "mse_or_centered_mse_two_seed_gate": true,
+        "pearson_non_decrease_and_one_significant_gain": true,
+        "centered_mse_improves_both_seeds": true
+      }
+    },
+    "spacetime_vs_mosaic": {
+      "passed": false,
+      "checks": {
+        "mse_or_centered_mse_two_seed_gate": true,
+        "pearson_non_decrease_both_seeds": false,
+        "no_significant_pearson_decline": true,
+        "bias_only_requires_two_seed_pearson_gain": false
+      }
+    }
+  },
+  "decision": {
+    "branch": "D",
+    "conclusion": "Seed 或指标方向冲突，证据不足；按预注册方案增加 seed。"
+  }
+}
