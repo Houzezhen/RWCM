@@ -1,0 +1,49 @@
+{
+  "baseline": "/home/user/code_1/WCM/outputs/eval_eight_frame_mosaic_pair/ood/mosaic8_s3072/episode_curves/episode_curves.csv",
+  "candidate": "/home/user/code_1/WCM/outputs/eval_eight_frame_mosaic_pair/ood/spacetime_t8_s3072/episode_curves/episode_curves.csv",
+  "episodes": 125,
+  "endpoints": 22082,
+  "alignment": "common",
+  "endpoint_manifest": null,
+  "dropped_baseline_endpoints": 0,
+  "dropped_candidate_endpoints": 0,
+  "target_consistency": {
+    "checked_endpoints": 22082,
+    "mismatched_endpoints": 0,
+    "absolute_tolerance": 1e-08
+  },
+  "baseline_mse": 0.05160202885227472,
+  "candidate_mse": 0.03360533518999532,
+  "mse_difference_candidate_minus_baseline": -0.0179966936622794,
+  "relative_mse_change": -0.34875942017318706,
+  "mse_paired_episode_bootstrap_ci95": [
+    -0.020647892728379892,
+    -0.015379814335049986
+  ],
+  "paired_episode_bootstrap_ci95": [
+    -0.020647892728379892,
+    -0.015379814335049986
+  ],
+  "probability_candidate_lower_mse": 1.0,
+  "baseline_centered_mse": 0.025422240202689957,
+  "candidate_centered_mse": 0.02390798953999878,
+  "centered_mse_difference_candidate_minus_baseline": -0.001514250662691178,
+  "centered_mse_paired_episode_bootstrap_ci95": [
+    -0.0033781110196619787,
+    0.0003114281959398021
+  ],
+  "probability_candidate_lower_centered_mse": 0.94855,
+  "baseline_pearson": 0.813316783661963,
+  "candidate_pearson": 0.8396150720190703,
+  "pearson_difference_candidate_minus_baseline": 0.026298288357107236,
+  "pearson_paired_episode_bootstrap_ci95": [
+    0.010727917996391756,
+    0.04191238193056197
+  ],
+  "probability_candidate_higher_pearson": 0.99965,
+  "baseline_mean_bias": -0.16180169544718856,
+  "candidate_mean_bias": -0.0984751016754821,
+  "bootstrap_samples": 20000,
+  "bootstrap_seed": 3072,
+  "seed": 3072
+}
