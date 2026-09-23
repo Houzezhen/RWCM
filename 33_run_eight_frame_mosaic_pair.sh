@@ -79,12 +79,13 @@ done
 echo "== 3/4 paired bootstrap =="
 for DATASET_NAME in 5cut ood; do
   for SEED in "${SEEDS[@]}"; do
+    # compare_experiments takes BASELINE first and CANDIDATE second.
     for PAIR in "mosaic8_s$SEED spacetime_t8_s$SEED" "mosaic8_s$SEED mosaic4_s$SEED"; do
       set -- $PAIR
       "$PYTHON" -m scripts.compare_experiments \
         "$EVAL_ROOT/$DATASET_NAME/$1" "$EVAL_ROOT/$DATASET_NAME/$2" \
         --align common --bootstrap-samples "$BOOTSTRAP_SAMPLES" --seed "$SEED" \
-        --output "$EVAL_ROOT/comparisons/${DATASET_NAME}_${1}_vs_${2}.json"
+        --output "$EVAL_ROOT/comparisons/${DATASET_NAME}_${2}_vs_${1}.json"
     done
   done
 done
