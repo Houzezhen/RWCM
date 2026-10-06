@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 from world_critic.checkpoint import load_checkpoint_payload
 from world_critic.config import apply_runtime_overrides, validate_train_config
@@ -126,6 +126,21 @@ def evaluate(args: argparse.Namespace) -> None:
     dataset = load_lerobot_dataset(config.data)
     episode_ids = _resolve_episode_ids(config, checkpoint_path, args.split)
     eval_dataset = LeRobotWorldCriticDataset(dataset, config.data, episode_ids)
+    terminal_rows = [
+        row_end - eval_dataset.window
+        for row_start, row_end in eval_dataset.episode_ranges.values()
+        if row_end - row_start >= eval_dataset.window
+        and (episode_ids is None or int(eval_dataset.episode_by_row[row_start]) in episode_ids)
+    ]
+    indices = np.searchsorted(eval_dataset.window_starts, terminal_rows)
+    if any(
+        index >= len(eval_dataset.window_starts) or eval_dataset.window_starts[index] != row
+        for index, row in zip(indices, terminal_rows, strict=True)
+    ):
+        raise RuntimeError("Could not resolve the final valid window for every selected episode.")
+    terminal_dataset = Subset(eval_dataset, indices.tolist())
+    if len(terminal_dataset) == 0:
+        raise ValueError("Selected split contains no evaluable episode endpoints.")
     processor = build_processor(config.model)
     collator = WorldCriticCollator(
         processor,
@@ -133,7 +148,7 @@ def evaluate(args: argparse.Namespace) -> None:
         config.model.language.max_length,
     )
     loader = DataLoader(
-        eval_dataset,
+        terminal_dataset,
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
@@ -183,8 +198,9 @@ def evaluate(args: argparse.Namespace) -> None:
                     "true_failure": int(1.0 - float(success_targets[row, position])),
                 }
                 previous = endpoint_by_episode.get(episode_id)
-                if previous is None or frame_index > previous["frame_index"]:
-                    endpoint_by_episode[episode_id] = record
+                if previous is not None:
+                    raise RuntimeError(f"Duplicate terminal prediction for episode {episode_id}.")
+                endpoint_by_episode[episode_id] = record
 
     records = [endpoint_by_episode[key] for key in sorted(endpoint_by_episode)]
     labels = [record["true_failure"] for record in records]
