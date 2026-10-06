@@ -89,6 +89,23 @@ def _binary_auroc(labels: list[int], probabilities: list[float]) -> float | None
     return (rank_sum - positives * (positives + 1) / 2.0) / (positives * negatives)
 
 
+def _calibrate_threshold(labels: list[int], scores: list[float]) -> float:
+    """Choose a score threshold on calibration episodes only."""
+    if not labels or len(set(labels)) < 2:
+        raise ValueError("Threshold calibration requires both success and failure episodes.")
+    unique = sorted(set(scores))
+    candidates = [unique[0] - 1.0, unique[-1] + 1.0]
+    candidates.extend((left + right) / 2.0 for left, right in zip(unique, unique[1:]))
+    best = None
+    for threshold in candidates:
+        metrics = _binary_metrics(labels, scores, threshold)
+        key = (metrics["balanced_accuracy"], metrics["accuracy"], -abs(threshold))
+        if best is None or key > best[0]:
+            best = (key, threshold)
+    assert best is not None
+    return float(best[1])
+
+
 def _resolve_episode_ids(config: Any, checkpoint: Path, split: str) -> list[int] | None:
     if split == "all":
         return None
@@ -117,53 +134,59 @@ def evaluate(args: argparse.Namespace) -> None:
     config = apply_runtime_overrides(config_from_checkpoint_payload(payload))
     if args.dataset_root:
         config.data.root = Path(args.dataset_root).expanduser().resolve()
+    if args.mode == "value" and config.data.success_key is None:
+        config.data.success_key = "episode_success"
     validate_train_config(config)
-    if not config.model.predict_risk:
+    if args.mode == "risk" and not config.model.predict_risk:
         raise ValueError("The checkpoint does not contain a risk head (model.predict_risk=false).")
+    if args.mode == "value" and config.model.predict_risk:
+        raise ValueError("Use --mode risk for a checkpoint with a risk head.")
     seed_everything(config.seed, config.deterministic)
 
     dataset = load_lerobot_dataset(config.data)
-    episode_ids = _resolve_episode_ids(config, checkpoint_path, args.split)
-    eval_dataset = LeRobotWorldCriticDataset(dataset, config.data, episode_ids)
-    selected_rows = [
-        row_start + round((row_end - row_start - eval_dataset.window) * args.episode_fraction)
-        for row_start, row_end in eval_dataset.episode_ranges.values()
-        if row_end - row_start >= eval_dataset.window
-        and (episode_ids is None or int(eval_dataset.episode_by_row[row_start]) in episode_ids)
-    ]
-    indices = np.searchsorted(eval_dataset.window_starts, selected_rows)
-    if any(
-        index >= len(eval_dataset.window_starts) or eval_dataset.window_starts[index] != row
-        for index, row in zip(indices, selected_rows, strict=True)
-    ):
-        raise RuntimeError("Could not resolve the selected window for every episode.")
-    selected_dataset = Subset(eval_dataset, indices.tolist())
-    if len(selected_dataset) == 0:
-        raise ValueError("Selected split contains no evaluable episode endpoints.")
     processor = build_processor(config.model)
     collator = WorldCriticCollator(
         processor,
         config.model.vision.image_size,
         config.model.language.max_length,
     )
-    loader = DataLoader(
-        selected_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        drop_last=False,
-        num_workers=args.num_workers,
-        persistent_workers=args.num_workers > 0,
-        pin_memory=ctx.device.type == "cuda",
-        collate_fn=collator,
-    )
-
     model = WorldCriticModel(config.model)
     model.load_state_dict(payload["model"], strict=True)
     model.to(ctx.device).eval().requires_grad_(False)
 
-    endpoint_by_episode: dict[int, dict[str, Any]] = {}
-    with torch.inference_mode():
-        for batch in loader:
+    def make_loader(split: str) -> DataLoader:
+        episode_ids = _resolve_episode_ids(config, checkpoint_path, split)
+        eval_dataset = LeRobotWorldCriticDataset(dataset, config.data, episode_ids)
+        selected_rows = [
+            row_start + round((row_end - row_start - eval_dataset.window) * args.episode_fraction)
+            for row_start, row_end in eval_dataset.episode_ranges.values()
+            if row_end - row_start >= eval_dataset.window
+            and (episode_ids is None or int(eval_dataset.episode_by_row[row_start]) in episode_ids)
+        ]
+        indices = np.searchsorted(eval_dataset.window_starts, selected_rows)
+        if any(
+            index >= len(eval_dataset.window_starts) or eval_dataset.window_starts[index] != row
+            for index, row in zip(indices, selected_rows, strict=True)
+        ):
+            raise RuntimeError("Could not resolve the selected window for every episode.")
+        selected_dataset = Subset(eval_dataset, indices.tolist())
+        if len(selected_dataset) == 0:
+            raise ValueError(f"Selected split {split!r} contains no evaluable episode endpoints.")
+        return DataLoader(
+            selected_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            drop_last=False,
+            num_workers=args.num_workers,
+            persistent_workers=args.num_workers > 0,
+            pin_memory=ctx.device.type == "cuda",
+            collate_fn=collator,
+        )
+
+    def collect_records(loader: DataLoader) -> list[dict[str, Any]]:
+        endpoint_by_episode: dict[int, dict[str, Any]] = {}
+        with torch.inference_mode():
+          for batch in loader:
             device_batch = {
                 key: value.to(ctx.device) if torch.is_tensor(value) else value
                 for key, value in batch.items()
@@ -177,13 +200,16 @@ def evaluate(args: argparse.Namespace) -> None:
                 state_vectors=device_batch.get("state_vectors"),
                 history_images=device_batch.get("history_images"),
             )
-            if output.risk_logits is None:
-                raise RuntimeError("Checkpoint forward returned no risk logits.")
             valid = output.valid_mask.bool()
-            probabilities = torch.sigmoid(output.risk_logits.squeeze(-1))
+            if args.mode == "risk":
+                if output.risk_logits is None:
+                    raise RuntimeError("Checkpoint forward returned no risk logits.")
+                scores = torch.sigmoid(output.risk_logits.squeeze(-1))
+            else:
+                scores = -output.value.squeeze(-1)
             success_targets = device_batch["success_targets"].squeeze(-1)
             frame_indices = device_batch["frame_indices"]
-            for row in range(probabilities.size(0)):
+            for row in range(scores.size(0)):
                 valid_positions = torch.nonzero(valid[row], as_tuple=False).flatten()
                 if valid_positions.numel() == 0:
                     continue
@@ -193,19 +219,30 @@ def evaluate(args: argparse.Namespace) -> None:
                 record = {
                     "episode_id": episode_id,
                     "frame_index": frame_index,
-                    "failure_probability": float(probabilities[row, position]),
+                    "failure_score": float(scores[row, position]),
+                    "raw_value": float(output.value[row, position]),
                     "true_failure": int(1.0 - float(success_targets[row, position])),
                 }
                 previous = endpoint_by_episode.get(episode_id)
                 if previous is not None:
                     raise RuntimeError(f"Duplicate prediction for episode {episode_id}.")
                 endpoint_by_episode[episode_id] = record
+        return [endpoint_by_episode[key] for key in sorted(endpoint_by_episode)]
 
-    records = [endpoint_by_episode[key] for key in sorted(endpoint_by_episode)]
+    calibration_records = (
+        collect_records(make_loader(args.calibration_split)) if args.mode == "value" else []
+    )
+    records = collect_records(make_loader(args.split))
     labels = [record["true_failure"] for record in records]
-    probabilities = [record["failure_probability"] for record in records]
-    metrics = _binary_metrics(labels, probabilities, args.threshold)
-    metrics["auroc_failure"] = _binary_auroc(labels, probabilities)
+    scores = [record["failure_score"] for record in records]
+    if args.mode == "value":
+        calibration_labels = [record["true_failure"] for record in calibration_records]
+        calibration_scores = [record["failure_score"] for record in calibration_records]
+        threshold = _calibrate_threshold(calibration_labels, calibration_scores)
+    else:
+        threshold = args.threshold
+    metrics = _binary_metrics(labels, scores, threshold)
+    metrics["auroc_failure"] = _binary_auroc(labels, scores)
     metrics["positive_failure_episodes"] = sum(labels)
     metrics["positive_success_episodes"] = len(labels) - sum(labels)
 
@@ -214,9 +251,16 @@ def evaluate(args: argparse.Namespace) -> None:
         "checkpoint": str(checkpoint_path),
         "dataset_root": str(config.data.root),
         "split": args.split,
-        "target_definition": "true_failure = 1 - episode_success; risk sigmoid predicts failure probability",
+        "score_source": args.mode,
+        "target_definition": "true_failure = 1 - episode_success",
+        "score_definition": (
+            "sigmoid(risk_logits) predicts failure probability"
+            if args.mode == "risk"
+            else "failure_score = -V(s); larger values indicate failure"
+        ),
         "endpoint_definition": "one window per episode at the specified fraction of available windows",
         "episode_fraction": args.episode_fraction,
+        "calibration_split": args.calibration_split if args.mode == "value" else None,
         "metrics": metrics,
         "episodes": records,
     }
@@ -229,9 +273,11 @@ def evaluate(args: argparse.Namespace) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--mode", choices=["risk", "value"], default="risk")
     parser.add_argument("--dataset-root")
     parser.add_argument("--output", required=True)
     parser.add_argument("--split", default="val", choices=["train", "val", "all"])
+    parser.add_argument("--calibration-split", default="train", choices=["train", "val", "all"])
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--threshold", type=float, default=0.5)
