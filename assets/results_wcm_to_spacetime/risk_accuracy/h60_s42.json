@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "checkpoint": "/media/Data/user/WCM_outputs/wcm_spacetime_vit_t8_direct_full_s42/deploy.pt",
+  "dataset_root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0814_expanded_with_return",
+  "split": "val",
+  "target_definition": "true_failure = 1 - episode_success; risk sigmoid predicts failure probability",
+  "endpoint_definition": "last available frame per episode",
+  "metrics": {
+    "n_episodes": 18,
+    "threshold": 0.5,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "precision_failure": 1.0,
+    "recall_failure": 1.0,
+    "f1_failure": 1.0,
+    "precision_success": 1.0,
+    "recall_success": 1.0,
+    "f1_success": 1.0,
+    "macro_f1": 1.0,
+    "specificity_success": 1.0,
+    "confusion_matrix": {
+      "true_failure_pred_failure": 5,
+      "true_failure_pred_success": 0,
+      "true_success_pred_failure": 0,
+      "true_success_pred_success": 13
+    },
+    "auroc_failure": 1.0,
+    "positive_failure_episodes": 5,
+    "positive_success_episodes": 13
+  },
+  "episodes": [
+    {
+      "episode_id": 12,
+      "frame_index": 163,
+      "failure_probability": 4.617648041715938e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 14,
+      "frame_index": 183,
+      "failure_probability": 4.195188196831623e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 50,
+      "frame_index": 218,
+      "failure_probability": 4.2622039231332565e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 58,
+      "frame_index": 172,
+      "failure_probability": 4.6541579479253414e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 77,
+      "frame_index": 117,
+      "failure_probability": 4.0360741415668144e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 88,
+      "frame_index": 167,
+      "failure_probability": 5.095394328691327e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 96,
+      "frame_index": 162,
+      "failure_probability": 6.955259923557833e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 103,
+      "frame_index": 134,
+      "failure_probability": 3.350423272152625e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 108,
+      "frame_index": 168,
+      "failure_probability": 4.148243082369163e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 109,
+      "frame_index": 158,
+      "failure_probability": 4.207031611969114e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 114,
+      "frame_index": 200,
+      "failure_probability": 4.454525193153813e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 118,
+      "frame_index": 167,
+      "failure_probability": 1.619074319059166e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 120,
+      "frame_index": 220,
+      "failure_probability": 4.227680427959513e-09,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 138,
+      "frame_index": 236,
+      "failure_probability": 1.0,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 148,
+      "frame_index": 225,
+      "failure_probability": 1.0,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 150,
+      "frame_index": 149,
+      "failure_probability": 1.0,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 163,
+      "frame_index": 202,
+      "failure_probability": 1.0,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 165,
+      "frame_index": 175,
+      "failure_probability": 1.0,
+      "true_failure": 1
+    }
+  ]
+}

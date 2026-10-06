@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "checkpoint": "/media/Data/user/WCM_outputs/wcm_spacetime_vit_t8_direct_full_t120_s1337/deploy.pt",
+  "dataset_root": "/media/Data/user/huggingface/lerobot/test/data_toiletButton_0814_expanded_with_return",
+  "split": "val",
+  "score_source": "risk",
+  "target_definition": "true_failure = 1 - episode_success",
+  "score_definition": "sigmoid(risk_logits) predicts failure probability",
+  "endpoint_definition": "one prediction per episode at the specified frame index",
+  "episode_fraction": null,
+  "frame_index": 2,
+  "calibration_split": null,
+  "metrics": {
+    "n_episodes": 18,
+    "threshold": 0.5,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "precision_failure": 1.0,
+    "recall_failure": 1.0,
+    "f1_failure": 1.0,
+    "precision_success": 1.0,
+    "recall_success": 1.0,
+    "f1_success": 1.0,
+    "macro_f1": 1.0,
+    "specificity_success": 1.0,
+    "confusion_matrix": {
+      "true_failure_pred_failure": 5,
+      "true_failure_pred_success": 0,
+      "true_success_pred_failure": 0,
+      "true_success_pred_success": 13
+    },
+    "auroc_failure": 1.0,
+    "positive_failure_episodes": 5,
+    "positive_success_episodes": 13
+  },
+  "episodes": [
+    {
+      "episode_id": 12,
+      "frame_index": 2,
+      "failure_score": 1.0522027693582459e-08,
+      "raw_value": -0.5704952478408813,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 14,
+      "frame_index": 2,
+      "failure_score": 1.1102163632870088e-08,
+      "raw_value": -0.6104971766471863,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 50,
+      "frame_index": 2,
+      "failure_score": 1.8560735171035958e-08,
+      "raw_value": -0.7853115200996399,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 58,
+      "frame_index": 2,
+      "failure_score": 1.3365098361362016e-08,
+      "raw_value": -0.6987503170967102,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 77,
+      "frame_index": 2,
+      "failure_score": 1.1594979199003319e-08,
+      "raw_value": -0.6892918348312378,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 88,
+      "frame_index": 2,
+      "failure_score": 1.4347933507963262e-08,
+      "raw_value": -0.7110435962677002,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 96,
+      "frame_index": 2,
+      "failure_score": 1.2208979605077275e-08,
+      "raw_value": -0.6732532382011414,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 103,
+      "frame_index": 2,
+      "failure_score": 1.4689865324157836e-08,
+      "raw_value": -0.7456943988800049,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 108,
+      "frame_index": 2,
+      "failure_score": 1.3334798154573946e-08,
+      "raw_value": -0.7066539525985718,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 109,
+      "frame_index": 2,
+      "failure_score": 1.9763490399782313e-08,
+      "raw_value": -0.7902635335922241,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 114,
+      "frame_index": 2,
+      "failure_score": 2.79898948463142e-08,
+      "raw_value": -0.8838562369346619,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 118,
+      "frame_index": 2,
+      "failure_score": 2.3886702393838277e-08,
+      "raw_value": -0.8624371886253357,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 120,
+      "frame_index": 2,
+      "failure_score": 1.7198056312395238e-08,
+      "raw_value": -0.783784806728363,
+      "true_failure": 0
+    },
+    {
+      "episode_id": 138,
+      "frame_index": 2,
+      "failure_score": 1.0,
+      "raw_value": -1.0096385478973389,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 148,
+      "frame_index": 2,
+      "failure_score": 1.0,
+      "raw_value": -1.0126513242721558,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 150,
+      "frame_index": 2,
+      "failure_score": 1.0,
+      "raw_value": -1.0037269592285156,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 163,
+      "frame_index": 2,
+      "failure_score": 1.0,
+      "raw_value": -1.0089118480682373,
+      "true_failure": 1
+    },
+    {
+      "episode_id": 165,
+      "frame_index": 2,
+      "failure_score": 1.0,
+      "raw_value": -1.0087978839874268,
+      "true_failure": 1
+    }
+  ]
+}
