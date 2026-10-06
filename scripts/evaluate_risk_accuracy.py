@@ -1,9 +1,8 @@
 """Evaluate the WCM risk head as an episode-level success/failure classifier.
 
 The model's risk target is failure (1 - episode_success).  Temporal evaluation
-windows overlap, so the primary report keeps the final available prediction per
-episode.  This avoids counting the same episode repeatedly while preserving the
-model's endpoint classification behavior.
+windows overlap, so each report selects one prediction per episode at a fixed
+fraction of its available windows.
 """
 from __future__ import annotations
 
@@ -126,20 +125,20 @@ def evaluate(args: argparse.Namespace) -> None:
     dataset = load_lerobot_dataset(config.data)
     episode_ids = _resolve_episode_ids(config, checkpoint_path, args.split)
     eval_dataset = LeRobotWorldCriticDataset(dataset, config.data, episode_ids)
-    terminal_rows = [
-        row_end - eval_dataset.window
+    selected_rows = [
+        row_start + round((row_end - row_start - eval_dataset.window) * args.episode_fraction)
         for row_start, row_end in eval_dataset.episode_ranges.values()
         if row_end - row_start >= eval_dataset.window
         and (episode_ids is None or int(eval_dataset.episode_by_row[row_start]) in episode_ids)
     ]
-    indices = np.searchsorted(eval_dataset.window_starts, terminal_rows)
+    indices = np.searchsorted(eval_dataset.window_starts, selected_rows)
     if any(
         index >= len(eval_dataset.window_starts) or eval_dataset.window_starts[index] != row
-        for index, row in zip(indices, terminal_rows, strict=True)
+        for index, row in zip(indices, selected_rows, strict=True)
     ):
-        raise RuntimeError("Could not resolve the final valid window for every selected episode.")
-    terminal_dataset = Subset(eval_dataset, indices.tolist())
-    if len(terminal_dataset) == 0:
+        raise RuntimeError("Could not resolve the selected window for every episode.")
+    selected_dataset = Subset(eval_dataset, indices.tolist())
+    if len(selected_dataset) == 0:
         raise ValueError("Selected split contains no evaluable episode endpoints.")
     processor = build_processor(config.model)
     collator = WorldCriticCollator(
@@ -148,7 +147,7 @@ def evaluate(args: argparse.Namespace) -> None:
         config.model.language.max_length,
     )
     loader = DataLoader(
-        terminal_dataset,
+        selected_dataset,
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
@@ -199,7 +198,7 @@ def evaluate(args: argparse.Namespace) -> None:
                 }
                 previous = endpoint_by_episode.get(episode_id)
                 if previous is not None:
-                    raise RuntimeError(f"Duplicate terminal prediction for episode {episode_id}.")
+                    raise RuntimeError(f"Duplicate prediction for episode {episode_id}.")
                 endpoint_by_episode[episode_id] = record
 
     records = [endpoint_by_episode[key] for key in sorted(endpoint_by_episode)]
@@ -216,7 +215,8 @@ def evaluate(args: argparse.Namespace) -> None:
         "dataset_root": str(config.data.root),
         "split": args.split,
         "target_definition": "true_failure = 1 - episode_success; risk sigmoid predicts failure probability",
-        "endpoint_definition": "last available frame per episode",
+        "endpoint_definition": "one window per episode at the specified fraction of available windows",
+        "episode_fraction": args.episode_fraction,
         "metrics": metrics,
         "episodes": records,
     }
@@ -235,9 +235,12 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--episode-fraction", type=float, default=1.0)
     args = parser.parse_args()
     if not 0.0 <= args.threshold <= 1.0:
         raise ValueError("--threshold must be in [0,1].")
+    if not 0.0 <= args.episode_fraction <= 1.0:
+        raise ValueError("--episode-fraction must be in [0,1].")
     evaluate(args)
 
 
