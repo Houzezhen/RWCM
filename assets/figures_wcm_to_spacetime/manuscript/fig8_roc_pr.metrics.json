@@ -1,0 +1,74 @@
+{
+  "population": {
+    "split": "checkpoint_validation",
+    "episodes": 18,
+    "failures": 5,
+    "seeds": [
+      3072,
+      42,
+      1337
+    ]
+  },
+  "bootstrap": {
+    "unit": "episode",
+    "paired_across_models_and_seeds": true,
+    "stratified_by_outcome": true,
+    "draws": 3000,
+    "seed": 120,
+    "interval": "pointwise_percentile_95"
+  },
+  "metrics": {
+    "Original WCM": {
+      "AUROC": {
+        "per_seed": {
+          "3072": 0.6000000000000001,
+          "42": 0.6461538461538461,
+          "1337": 0.7846153846153846
+        },
+        "mean_of_three_seeds": 0.6769230769230768,
+        "paired_episode_bootstrap_ci95": [
+          0.4461538461538462,
+          0.8717948717948718
+        ]
+      },
+      "average_precision": {
+        "per_seed": {
+          "3072": 0.36272727272727273,
+          "42": 0.3792424242424242,
+          "1337": 0.5911111111111111
+        },
+        "mean_of_three_seeds": 0.44436026936026934,
+        "paired_episode_bootstrap_ci95": [
+          0.32726286213786215,
+          0.7709290524290525
+        ]
+      }
+    },
+    "SpaceTime H120": {
+      "AUROC": {
+        "per_seed": {
+          "3072": 1.0,
+          "42": 1.0,
+          "1337": 1.0
+        },
+        "mean_of_three_seeds": 1.0,
+        "paired_episode_bootstrap_ci95": [
+          1.0,
+          1.0
+        ]
+      },
+      "average_precision": {
+        "per_seed": {
+          "3072": 1.0,
+          "42": 1.0,
+          "1337": 1.0
+        },
+        "mean_of_three_seeds": 1.0,
+        "paired_episode_bootstrap_ci95": [
+          1.0,
+          1.0
+        ]
+      }
+    }
+  }
+}

@@ -31,8 +31,8 @@ seed 1337 identifies 1/5. Both SpaceTime variants identify 5/5 failures and
 
 ## Episode progress and final endpoint
 
-The `_f0`, `_f05`, `_f075`, and default or `_f1` suffixes select the first,
-50%, 75%, and last available prediction window within each episode. These are
+The `_f0`, `_f025`, `_f05`, `_f075`, and default or `_f1` suffixes select the first,
+25%, 50%, 75%, and last available prediction window within each episode. These are
 fractions of the completed episode length, not numbers of input frames. At
 `_f0`, SpaceTime's historical offsets clamp to the first observed frame, so
 the eight history slots do not provide eight independent observations. A fixed
@@ -41,6 +41,7 @@ frame index is more appropriate for an operational early-prediction claim.
 | Evaluation point | Original WCM value accuracy, seeds 3072 / 42 / 1337 | SpaceTime H60 and H120 risk accuracy, all seeds |
 | --- | --- | --- |
 | First available window | 11/18, 13/18, 13/18 | 18/18 |
+| 25% of episode | Not evaluated for original WCM | 18/18 for H120 (all seeds) |
 | 50% of episode | 18/18, 18/18, 18/18 | 18/18 |
 | 75% of episode | 18/18, 18/18, 18/18 | 18/18 |
 | Last available window | 13/18, 13/18, 13/18 | 18/18 |

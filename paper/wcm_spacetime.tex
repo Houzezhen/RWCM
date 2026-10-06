@@ -1,211 +1,218 @@
-% !TeX program = tectonic
+% !TeX program = pdflatex
 \documentclass[10pt,a4paper]{article}
 
-\usepackage[margin=2.35cm]{geometry}
-\usepackage{amsmath,amssymb,bm}
+\usepackage[margin=2.25cm]{geometry}
+\usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{multirow}
+\usepackage{float}
+\usepackage{microtype}
 \usepackage{xcolor}
-\usepackage{array}
 \usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=green!40!black,urlcolor=blue!60!black]{hyperref}
 \usepackage[numbers,sort&compress]{natbib}
 \usepackage{caption}
 \captionsetup{font=small,labelfont=bf}
 
 \newcommand{\mse}{\mathrm{MSE}}
-\newcommand{\cmse}{\mathrm{cMSE}}
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 \newcommand{\SpaceTime}{\textsc{SpaceTime}}
 \newcommand{\WCM}{\textsc{WCM}}
-\newcommand{\optionalfigure}[4]{%
-  \IfFileExists{#1}{%
-    \begin{figure}[t]
-    \centering
-    \includegraphics[width=#2\linewidth]{#1}
-    \caption{#3}
-    \label{#4}
-    \end{figure}
-  }{}
-}
+\newcommand{\figdir}{../assets/figures_wcm_to_spacetime/manuscript/}
 
-\title{From WCM to SpaceTime: Fixed-Budget Encoding of Longer Visual Histories for Robot Value Prediction}
+\title{From WCM to SpaceTime: Fixed-Query Visual History Encoding for Robot Value Prediction}
 \author{WCM Project}
-\date{September 2026}
+\date{October 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-History-aware value models for robot control must use observations collected over time, but simply adding frames increases the visual sequence while leaving the downstream critic with a fixed representational interface. We study a system-level route from an original World Critic Model (WCM) to a \SpaceTime{} history encoder. The central design keeps an eight-frame input and a fixed bottleneck of 64 learned queries while extending the largest sampled temporal offset from $H_{60}$ to $H_{120}$. This isolates temporal span from frame count and latent capacity. On the current two-seed evaluation, both spans improve out-of-distribution (OOD) value-prediction MSE over the original WCM; the $H_{120}$ variant further improves paired OOD MSE over the four-frame input-mosaic reference on the current pair endpoints. The $H_{120}$ experiment is a post-hoc span extension and is therefore reported as a provisional main result pending a third seed and a matched eight-frame mosaic control. We frame the contribution as a fixed-latent-budget history-encoding system, not as a new temporal-attention mechanism or a claim of unrestricted long-horizon compression.
+Visual histories can resolve state ambiguity in robot value prediction, yet their length increases the input sequence seen by the critic. We develop \SpaceTime{}, an extension of the World Critic Model (WCM) that encodes eight sampled frames from two cameras through a shared vision backbone and temporal interaction layers, then reduces the history to 64 learned queries. Holding the number of frames, queries, model blocks, and training schedule fixed, we compare histories spanning 60 and 120 frame offsets. Across three seeds on a 125-episode out-of-distribution (OOD) set, the 60-offset system reduces paired value-prediction error relative to the original WCM. Extending the span to 120 offsets further lowers paired OOD mean squared error for all three seeds, with episode-bootstrap 95\% intervals excluding zero. An episode-level success/failure diagnostic on an 18-episode checkpoint-validation split additionally shows 18/18 correct predictions at frame 2 for each \SpaceTime{} seed. These results support fixed-query encoding of a longer sampled history in the evaluated robot task; they do not imply fixed inference cost or a new temporal-attention operation.
 \end{abstract}
 
 \section{Introduction}
 
-Robot value prediction is partially observable: the current image can be compatible with multiple latent states that have different future returns. The original \WCM{} already includes a short local history, but its visual stream does not expose a single, explicit and scalable interface for encoding a long sequence of frames. This creates a practical design question: can a value model use a longer visual history without increasing the number of downstream latent tokens?
+The value of a robot state depends on progress that may be ambiguous in a single image. A short sequence can expose motion and interaction context, but carrying more frames through a critic also increases the visual input. The original \WCM{} uses local history for action-free value prediction, whereas its visual interface does not explicitly compress a longer sampled history into a fixed-size set of tokens. This study asks whether a fixed latent interface can make a longer visual history useful for value prediction.
 
-We investigate this question through a deliberately narrow route. The model receives eight sparsely sampled frames, applies a shared visual encoder and factorized temporal interaction, and compresses the resulting sequence into $K=64$ learned Perceiver queries. We call the resulting system \SpaceTime{}. We then compare two temporal spans, $H_{60}$ and $H_{120}$, while keeping the frame count, query count, model blocks, initialization protocol, and two-stage training schedule fixed. The experiment is intended to test whether a fixed latent bottleneck can represent a longer history usefully, not whether any temporal-attention primitive is novel.
+\SpaceTime{} processes eight observations at selected historical offsets. A shared ViT encodes each camera frame, temporal layers mix information across observed times, and Perceiver-style cross-attention reduces the resulting sequence to 64 learned queries \citep{dosovitskiy2021vit,jaegle2021perceiver}. The downstream WCM consumes this fixed-size representation. We test the route from the original WCM to an eight-frame history at maximum offset 60, then change only the sampling offsets to cover a maximum offset of 120. The main experiment therefore isolates temporal span within the \SpaceTime{} system rather than proposing a new attention primitive.
 
-Our claims are correspondingly bounded:
-\begin{enumerate}
-  \item We define a concrete \SpaceTime{} encoder for WCM value prediction and make the temporal-span variable explicit.
-  \item We evaluate the route from original WCM to fixed-query \SpaceTime{} on common OOD endpoints, using episode-level paired bootstrap intervals and MSE as the primary criterion.
-  \item We show a current two-seed result in which extending the span from $H_{60}$ to $H_{120}$ at fixed $K=64$ improves OOD error. The result is provisional until the preplanned third seed and an eight-frame mosaic control are added.
-\end{enumerate}
+The evidence follows three steps. First, we compare original WCM and \SpaceTime{} on paired OOD endpoints. Second, we compare the two \SpaceTime{} spans under the same model and evaluation protocol. Third, we inspect the model's trained failure-risk output on an episode-disjoint validation split and place it beside a value-based diagnostic from the original WCM. The latter uses different prediction heads and is interpreted as a system-level comparison.
 
-\section{Positioning and scope}
+\section{Method}
 
-In this paper, ``SpaceTime'' has three layers. It is a method name in the title and abstract, a precisely defined encoder in the method section, and an explanatory space-to-time metaphor in the introduction and discussion. The metaphor does not assert physical spacetime semantics or a causal theorem. Likewise, the paper does not introduce a new temporal-attention family. Its contribution is a system design: a history encoder with a fixed latent bottleneck, evaluated in a value-prediction setting.
+\subsection{Original WCM and prediction targets}
 
-The WCM target studied here is the action-free state value $V(s)$. Action enters the separate $Q(s,a)$ head and the action-conditioned dynamics prediction. Those components remain part of the surrounding WCM system but are not presented as new contributions of this paper.
-
-\section{From WCM to SpaceTime}
-
-\subsection{Original WCM}
-
-Let $o_t$ denote the current observation and let $\mathcal{H}_t$ denote the short local history used by the original WCM. The value head predicts
-\begin{equation}
-  \hat V_t = f_V(\mathcal{H}_t, p_t),
-\end{equation}
-where $p_t$ denotes proprioceptive features. The value path is action-free. The same WCM system contains an action-conditioned $Q$ path and dynamics path, but neither is needed to define the value target in the experiments below.
-
-\subsection{Temporal sampling and notation}
-
-For a maximum sampled offset $k$, define an eight-frame history
-\begin{equation}
-  \mathcal{X}^{(k)}_t = \bigl(x_{t-\delta_1},\ldots,x_{t-\delta_8}\bigr), \qquad \max_i \delta_i=k.
-\end{equation}
-We write $H_k$ for this history. Thus $H_{60}$ and $H_{120}$ both contain eight frames; they differ only in temporal span. In the current experiments,
-\begin{align}
-  H_{60}:&\quad [0,9,17,26,34,43,51,60],\\
-  H_{120}:&\quad [0,17,34,51,69,86,103,120].
-\end{align}
-The notation does not imply $k$ frames or $k$ seconds.
-When an offset crosses an episode boundary, the data loader clamps it to the episode's first frame. Thus increasing $k$ changes the temporal span and the fraction of boundary-clamped histories; it does not guarantee that every sampled frame is an independent observation.
+The original \WCM{} predicts an action-free state value $\hat V_t=f_V(\mathcal{H}_t,p_t)$ from its short local history $\mathcal{H}_t$ and proprioceptive state $p_t$. Action is consumed by the separate $Q(s,a)$ and action-conditioned dynamics paths after the value path. The \SpaceTime{} systems retain value, $Q$, and dynamics heads and also train a failure-risk head. Its logit $r_t$ uses the target $y_t^{\mathrm{fail}}=1-y_t^{\mathrm{success}}$, so $\sigma(r_t)$ is a failure score. The original WCM checkpoint has no risk head; its failure diagnostic below is constructed from $-\hat V_t$.
 
 \subsection{Fixed-query history encoder}
 
-Each frame is encoded by a shared visual backbone $\phi$:
+For a maximum sampled offset $k$, let
 \begin{equation}
-  z_i = \phi(x_{t-\delta_i}), \qquad i=1,\ldots,8.
+\mathcal{X}^{(k)}_t=\left(x_{t-\delta_1},\ldots,x_{t-\delta_8}\right),
+\qquad \max_i\delta_i=k.
 \end{equation}
-The frame features are processed by factorized temporal interaction layers, followed by a Perceiver-style cross-attention bottleneck with $K$ learned queries $q_1,\ldots,q_K$. Let $\Psi_\theta$ denote the temporal stack and $\Pi_K$ the query bottleneck. The history representation is
+We denote this eight-frame history by $H_k$. The two offset lists are
+\begin{align}
+H_{60}:  &[0,9,17,26,34,43,51,60],\\
+H_{120}: &[0,17,34,51,69,86,103,120].
+\end{align}
+Offsets are frame indices, not elapsed seconds or numbers of input frames. An offset preceding the episode start is clamped to the first frame, so the earliest predictions repeat that frame in several historical slots.
+
+Each of the two camera views is passed through a shared ViT $\phi$. With 224-pixel inputs, each view yields one CLS token and 196 patch tokens. Eight frames from two cameras therefore produce $8\times2\times197=3152$ visual tokens before reduction. The \SpaceTime{} representation is
 \begin{equation}
-  h_t^{(k)} = \Pi_K\!\left(\Psi_\theta(z_1,\ldots,z_8),q_1,\ldots,q_K\right),
-  \qquad K=64.
+h_t^{(k)}=\Pi_{64}\!\left(\Psi_\theta\bigl(\phi(\mathcal{X}^{(k)}_t)\bigr)\right),
+\qquad \hat V_t^{(k)}=g_V(h_t^{(k)},p_t),
 \end{equation}
-The value prediction is then
-\begin{equation}
-  \hat V_t^{(k)} = g_V\bigl(h_t^{(k)},p_t\bigr).
-\end{equation}
-The fixed quantity in our claim is the latent bottleneck $K=64$, not total FLOPs, latency, number of input pixels, or number of visual frames. The deployed model uses two temporal layers, eight attention heads, two Perceiver layers, latent width 384, and a trainable ViT-base visual encoder with frozen CLIP features \citep{dosovitskiy2021vit,radford2021clip,jaegle2021perceiver}.
+where $\Psi_\theta$ contains two factorized temporal layers and $\Pi_{64}$ contains two Perceiver-style reduction layers. The 64 output queries each have width 384. The vision backbone is trainable and the CLIP text features are frozen \citep{radford2021clip}. Figure~\ref{fig:system} shows the input and fixed-query interface. Here ``fixed'' describes the 64-query latent bottleneck: input pixels, FLOPs, and wall-clock time are reported separately.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.88\linewidth]{../assets/figures_wcm_to_spacetime/fig3_architecture.png}
-\caption{The fixed-query \SpaceTime{} encoder. Eight sparsely sampled frames are encoded independently, mixed by factorized temporal layers, and compressed to 64 queries before the existing WCM heads.}
-\label{fig:architecture}
+\includegraphics[width=.98\linewidth]{\figdir fig1_system.pdf}
+\caption{\textbf{SpaceTime training and episode-level evaluation.} Eight sampled time points from two cameras enter the shared ViT, temporal layers and 64-query bottleneck. Value is supervised by return; the failure-risk head uses $1-\text{success}$. At evaluation, overlapping windows feed the deployed model and one fixed-frame or terminal prediction is selected per episode before computing classification metrics and writing the JSON report. The input-card illustration is AI-generated concept art, not an experimental video frame. The risk head belongs to the \SpaceTime{} checkpoints, not to the original WCM checkpoint.}
+\label{fig:system}
 \end{figure}
 
 \section{Experimental protocol}
 
-\subsection{Models and route}
+\subsection{Models and value evaluation}
 
-The main route is
-\begin{center}
-\fbox{original WCM}\ $\longrightarrow$\ \fbox{T8--$H_{60}$ \SpaceTime{}}\ $\longrightarrow$\ \fbox{T8--$H_{120}$ \SpaceTime{}}.
-\end{center}
-The four-frame Image-B4 input mosaic is retained as a low-frame reference, not as a point on the same temporal-span axis. It provides a simple history baseline but does not receive the main mechanistic interpretation. A matched eight-frame mosaic experiment is required before making a strong claim that structured \SpaceTime{} encoding is better than input-level frame stacking.
+The experimental route is original WCM $\rightarrow$ T8--$H_{60}$ \SpaceTime{} $\rightarrow$ T8--$H_{120}$ \SpaceTime{}. The two \SpaceTime{} variants have the same architecture, 64-query bottleneck, same-seed Image-B4 initialization, and two-stage schedule: ten joint epochs followed by three full fine-tuning epochs. Their only changed model input is the offset list. The original WCM checkpoint uses a different training recipe and supports a system-level, rather than component-isolated, comparison.
 
-Both \SpaceTime{} spans use the same eight-frame architecture, 64 queries, direct teacher-free deployment, two-stage training (10-epoch joint stage followed by 3-epoch full stage), and initialization from the corresponding same-seed Image-B4 checkpoint. The only model input variable between $H_{60}$ and $H_{120}$ is the offset list.\todo{After seed 1337 is run, replace ``current two-seed'' language where appropriate.}
+The 0722 OOD set (125 episodes) is the primary value-prediction evaluation; the 0814 5-cut set supports near-distribution analysis. Paired comparisons use identical episode/frame endpoints and 20,000 episode-level bootstrap resamples per seed. Mean squared error (MSE) is primary, while Pearson correlation, centered MSE, and mean bias diagnose ordering and calibration. The original WCM versus $H_{60}$ comparison uses 21,832 common OOD endpoints per seed. The $H_{60}$ versus $H_{120}$ comparison uses a separate manifest of 22,082 endpoints per seed. Absolute metrics are only compared within their respective manifests.
 
-\subsection{Data and metrics}
+\subsection{Episode success/failure diagnostic}
 
-The primary evaluation is the 0722 OOD test set. The 0814 5-cut set is a supporting near-distribution evaluation. All paired comparisons use common endpoints and 20,000 episode-level bootstrap resamples. We report MSE as the primary criterion, with Pearson correlation, centered MSE, and mean bias as diagnostics. Efficiency statistics are descriptive and do not enter the performance gate.
+The expanded-data checkpoint-validation split contains 18 episodes: 13 successes and five failures. We select one prediction per episode at frame index 2, the earliest common frame for the original WCM and \SpaceTime{} checkpoints. For \SpaceTime{}, a risk score $\sigma(r_t)\geq0.5$ predicts failure. For original WCM, the score is $-\hat V_t$; its threshold is selected on training episodes to maximize balanced accuracy and then frozen on validation episodes. We report correct episodes, failure recall, balanced accuracy, macro-F1, AUROC, and the underlying confusion counts. The same 18 episodes are reused across model seeds and were part of checkpoint selection, so the seed results are repeated model evaluations of one validation cohort.
+
+Risk trajectories additionally sample one prediction per episode at fractions $0,0.25,0.5,0.75,1$ of the available window sequence. These fractions are computed from completed episode lengths for analysis; the fixed frame-2 comparison is the operational early-time readout. All five validation failures come from the 0703 failure collection, while 11 of 13 successes come from an 0814 success tail. Collection-related appearance is therefore a possible contributor to risk separation on this split.
 
 \section{Results}
 
-\subsection{Original WCM to T8--$H_{60}$}
+\subsection{Explicit visual history improves OOD value prediction}
 
-On the three-way common OOD endpoint set (125 episodes and 21,832 points), T8--$H_{60}$ improves over the original WCM for both available seeds. The absolute values are shown in Table~\ref{tab:threeway}; the paired intervals against the original WCM are $[-0.12618,-0.11060]$ and $[-0.09314,-0.07849]$ for MSE seeds 3072 and 42, respectively. These results support a system-level improvement claim. They do not isolate the temporal module from differences in training recipe or initialization.
+On the 21,832-endpoint common OOD manifest, T8--$H_{60}$ reduced MSE relative to original WCM in each of three seeds (Table~\ref{tab:original}; Fig.~\ref{fig:original}). The paired MSE changes were $-0.11833$ (95\% CI $[-0.12618,-0.11060]$), $-0.08568$ ($[-0.09314,-0.07849]$), and $-0.09157$ ($[-0.09922,-0.08403]$) for seeds 3072, 42, and 1337. Pearson correlation increased for all three seeds. This establishes a repeatable system-level gain from the longer-history encoder under the evaluated OOD protocol.
 
-\begin{table}[t]
+\begin{table}[H]
 \centering
-\caption{Current three-way OOD results on a common endpoint set. T8--$H_{60}$ denotes the direct \SpaceTime{} model.}
-\label{tab:threeway}
+\caption{\textbf{Original WCM and T8--$H_{60}$ on common OOD endpoints.} Each seed uses the same 125 episodes and 21,832 endpoint predictions. MSE reduction is $(\mse_{\mathrm{WCM}}-\mse_{H_{60}})/\mse_{\mathrm{WCM}}\times100\%$.}
+\label{tab:original}
 \small
-\begin{tabular}{llccc}
+\begin{tabular}{rccccc}
 \toprule
-Seed & Metric & Original WCM & Image-B4 mosaic & T8--$H_{60}$ \\
+& \multicolumn{2}{c}{Original WCM} & \multicolumn{2}{c}{T8--$H_{60}$} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Seed & MSE & Pearson $r$ & MSE & Pearson $r$ & MSE reduction \\
 \midrule
-3072 & MSE & 0.15167 & 0.04524 & 0.03334 \\
-     & Pearson & 0.140 & 0.849 & 0.838 \\
-42   & MSE & 0.11036 & 0.05294 & 0.02467 \\
-     & Pearson & 0.226 & 0.834 & 0.851 \\
+3072 & 0.15167 & 0.140 & 0.03334 & 0.838 & 78.02\% \\
+42   & 0.11036 & 0.226 & 0.02467 & 0.851 & 77.64\% \\
+1337 & 0.10926 & 0.258 & 0.01769 & 0.835 & 83.81\% \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\subsection{Fixed bottleneck, longer span}
-
-Table~\ref{tab:hspan} reports paired comparisons for the post-hoc $H_{120}$ span experiment. The pair endpoints contain 22,082 OOD points; they are not identical to the older three-way endpoint manifest, so absolute MSE values must not be compared across tables as if they were evaluated on exactly the same points. The paired deltas are directly comparable within each pair.
-
-\begin{table}[t]
-\centering
-\caption{T8--$H_{120}$ paired OOD deltas. Negative $\Delta\mse$ is an improvement.}
-\label{tab:hspan}
-\small
-\begin{tabular}{llcc}
-\toprule
-Comparison & Seed & $\Delta\mse$ [95\% CI] & $\Delta$ Pearson [95\% CI] \\
-\midrule
-$H_{120}$ vs Image-B4 & 3072 & $-0.0189$ [$-0.0209,-0.0168$] & $+0.0188$ [$+0.0065,+0.0330$] \\
-$H_{120}$ vs Image-B4 & 42 & $-0.0325$ [$-0.0354,-0.0294$] & $+0.0197$ [$+0.0003,+0.0392$] \\
-$H_{120}$ vs $H_{60}$ & 3072 & $-0.0069$ [$-0.0089,-0.0050$] & $+0.0297$ [$+0.0184,+0.0434$] \\
-$H_{120}$ vs $H_{60}$ & 42 & $-0.0040$ [$-0.0055,-0.0026$] & $+0.0045$ [$-0.0058,+0.0164$] \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The key controlled comparison is $H_{120}$ versus $H_{60}$: frame count, latent query count, temporal layers, initialization family, and training schedule remain fixed while the maximum offset doubles. Seed 3072 shows a significant Pearson gain; seed 42 shows a positive but non-significant Pearson interval. We therefore describe the span result as consistent for MSE in the current two-seed study, with correlation gains stronger for one seed than the other.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.92\linewidth]{../assets/figures_wcm_to_spacetime/fig5_span_t60_vs_t120.png}
-\caption{Per-episode T8--$H_{60}$ versus T8--$H_{120}$ OOD comparison. The figure uses the pair endpoint manifest and reports the same two seeds as Table~\ref{tab:hspan}.}
+\includegraphics[width=.95\linewidth]{\figdir fig2_ood_original_to_h60.pdf}
+\caption{\textbf{OOD value prediction across three model seeds.} Paired lines connect the original WCM and T8--$H_{60}$ checkpoint from the same seed. (a) Mean squared error. (b) Pearson correlation. All points use the same 125 episodes and 21,832 common endpoints per seed. Markers identify seeds 3072 (circle), 42 (square), and 1337 (triangle).}
+\label{fig:original}
+\end{figure}
+
+\subsection{A longer span reduces error at fixed frame and query counts}
+
+The controlled $H_{60}\rightarrow H_{120}$ comparison uses eight input frames and 64 output queries for both variants. On 22,082 paired OOD endpoints, extending the maximum offset to 120 reduced MSE in all three seeds (Table~\ref{tab:span}; Fig.~\ref{fig:span}). The paired changes ranged from $-0.00399$ to $-0.00688$, and every 95\% CI excluded zero. Pearson gains were clear for seeds 3072 and 1337; seed 42 had a positive point estimate whose interval crossed zero. The larger span therefore supports the paper's fixed-query history claim through consistent MSE improvements within the tested offset range.
+
+\begin{table}[H]
+\centering
+\caption{\textbf{T8--$H_{120}$ minus T8--$H_{60}$ on paired OOD endpoints.} Each seed has 125 episodes and 22,082 common endpoints. Intervals are 95\% episode-level paired bootstrap intervals from 20,000 resamples. MSE reduction is $(\mse_{H_{60}}-\mse_{H_{120}})/\mse_{H_{60}}\times100\%$ on these paired endpoints.}
+\label{tab:span}
+\small
+\begin{tabular}{rccc}
+\toprule
+Seed & $\Delta\mse$ [95\% CI] & MSE reduction & $\Delta$Pearson $r$ [95\% CI] \\
+\midrule
+3072 & $-0.00688$ [$-0.00887,-0.00504$] & 20.48\% & $+0.02968$ [$+0.01838,+0.04340$] \\
+42   & $-0.00399$ [$-0.00549,-0.00257$] & 16.01\% & $+0.00449$ [$-0.00584,+0.01639$] \\
+1337 & $-0.00420$ [$-0.00596,-0.00261$] & 23.68\% & $+0.02695$ [$+0.01234,+0.04407$] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.95\linewidth]{\figdir fig3_ood_span_effect.pdf}
+\caption{\textbf{Paired effect of extending the temporal span.} Seed-level point estimates and 95\% episode-bootstrap intervals for T8--$H_{120}$ minus T8--$H_{60}$: (a) MSE and (b) Pearson correlation. The dashed line denotes zero change. Both variants are evaluated on identical endpoints within each seed; these 22,082 endpoints differ from those in Fig.~\ref{fig:original}.}
 \label{fig:span}
 \end{figure}
 
-\subsection{Role of the four-frame reference}
+\subsection{Failure scores on checkpoint validation episodes}
 
-The Image-B4 model demonstrates that adding sparse visual context can be useful, but it changes both input organization and the amount of per-frame visual information. The current T8--$H_{60}$ comparison does not pass the pre-registered strong-baseline gate for superiority over this reference because Pearson changes in opposite directions across seeds and the MSE gain is partly explained by bias reduction. We consequently do not claim that \SpaceTime{} is uniformly superior to mosaic.\todo{Add the matched eight-frame mosaic result before making any structured-vs-mosaic claim.}
+At the shared frame-2 readout, both \SpaceTime{} spans classified all 18 validation episodes correctly for each of three seeds. The original WCM value diagnostic classified 11, 13, and 13 episodes correctly for seeds 3072, 42, and 1337, respectively (Fig.~\ref{fig:classification}). Its failure recall was 0/5, 0/5, and 1/5, compared with 5/5 for each \SpaceTime{} checkpoint. The contrast describes the deployed systems and their respective score heads; it does not isolate the temporal encoder from the trained risk head.
 
-\optionalfigure{../assets/figures_wcm_to_spacetime/fig6_video_inference.png}{0.96}{Representative video inference with ground-truth return and model predictions. The final caption must state the episode-selection rule and whether the panel was selected before inspecting model outputs.}{fig:video-inference}
-\optionalfigure{../assets/figures_wcm_to_spacetime/fig7_analysis.png}{0.96}{Additional diagnostic analysis supplied with the experiment. The caption should identify the measured quantity, split, seed, and whether the visualization is exploratory.}{fig:analysis}
+\begin{figure}[t]
+\centering
+\includegraphics[width=.88\linewidth]{\figdir fig4_validation_classification.pdf}
+\caption{\textbf{Episode-level success/failure diagnostic at frame 2.} Correct validation episodes out of 18 (13 true successes, five true failures), shown separately for model seeds 3072, 42, and 1337. Original WCM uses $-V(s)$ with a seed-specific threshold calibrated on training episodes. \SpaceTime{} $H_{60}$ and $H_{120}$ use their trained failure-risk heads with a score threshold of 0.5. The cohort is shared across seeds and contains collection-related outcome imbalance.}
+\label{fig:classification}
+\end{figure}
 
-\section{Ablations and analysis}
+Figures~\ref{fig:risk-trajectory} and \ref{fig:risk-heatmap} trace the failure score over five episode-progress points and show its distribution across individual validation episodes. Figure~\ref{fig:roc-pr} summarizes threshold-free discrimination at the fixed frame-2 readout: the mean original-WCM AUROC across seeds is 0.677 (95\% paired-episode bootstrap interval $[0.446,0.872]$), whereas the $H_{120}$ risk score separates the observed validation labels completely (AUROC and average precision both 1.0). Figure~\ref{fig:risk-distribution} retains the individual scores at three progress points. Progress percentages index completed episode duration for retrospective visualization, whereas frame 2 is the fixed-time comparison.
 
-\subsection{Frame count versus span}
+\begin{figure}[t]
+\centering
+\includegraphics[width=.94\linewidth]{\figdir fig6_risk_trajectory.pdf}
+\caption{\textbf{Failure-risk trajectories across episode progress.} True-success and true-failure episodes are summarized at fractions $0,0.25,0.5,0.75,$ and $1$ of the available episode windows. The score is $\sigma(r_t)$ from T8--$H_{120}$. Curves summarize 13 successes and five failures from the same validation cohort; seeds are repeated model fits, not independent episodes. Progress fractions use the completed episode length.}
+\label{fig:risk-trajectory}
+\end{figure}
 
-T4/Image-B4 is a low-frame reference. It should not be read as evidence that four, eight, or sixteen frames form a monotone scaling law. The controlled axis in this paper is $H_{60}\rightarrow H_{120}$ at T8 and $K=64$.\todo{Insert the final T4/T8 matched table if the T4 run is retained in the final experiment set.}
+\begin{figure}[t]
+\centering
+\includegraphics[width=.94\linewidth]{\figdir fig7_risk_heatmap.pdf}
+\caption{\textbf{Episode-level failure-risk landscape.} Rows are the 18 validation episodes for a representative T8--$H_{120}$ seed; columns are the five episode-progress fractions. Color encodes $\sigma(r_t)$, and the outcome strip at left indicates true success or failure. Rows are grouped by true outcome and ordered by episode length within each group.}
+\label{fig:risk-heatmap}
+\end{figure}
 
-\subsection{Efficiency}
+\begin{figure}[t]
+\centering
+\includegraphics[width=.94\linewidth]{\figdir fig8_roc_pr.pdf}
+\caption{\textbf{Threshold-free failure discrimination at frame 2.} ROC and precision--recall curves compare the original WCM value score $-V(s)$ with the trained T8--$H_{120}$ risk score on the same 18 validation episodes (five failures). Curves and shaded 95\% bands reflect three model seeds and episode-level resampling; all resamples preserve the success/failure class counts. The same episodes recur across seeds.}
+\label{fig:roc-pr}
+\end{figure}
 
-The current T8 \SpaceTime{} model has approximately 176.1M parameters, compared with 170.6M for the original WCM and Image-B4 systems. Its measured forward time is about 12.9 ms per sample, versus approximately 6.9 ms for original WCM and 6.1 ms for Image-B4 under the reported batch-four measurement. Thus ``fixed budget'' refers to the latent representation bottleneck, not equal wall-clock cost.
+\begin{figure}[t]
+\centering
+\includegraphics[width=.94\linewidth]{\figdir fig9_risk_distribution.pdf}
+\caption{\textbf{Failure-score distributions by true outcome.} Violin summaries and individually jittered episode scores for true successes ($n=13$) and true failures ($n=5$) at the first, 50\%, and 75\% progress windows. All scores come from the T8--$H_{120}$ risk head of seed 3072; the same 18 episodes appear in each panel. Progress fractions refer to each episode's completed duration.}
+\label{fig:risk-distribution}
+\end{figure}
 
-\subsection{What the experiment does not identify}
+\subsection{Qualitative video observations}
 
-The reported checkpoints differ in more than one training detail from the original WCM, and current \SpaceTime{} checkpoints are initialized from Image-B4 weights. The results therefore establish a system-level route and controlled span comparison, not a clean causal estimate of every temporal block's marginal contribution. A matched-training three-arm experiment would be needed for that stronger claim.
+The supplied video artifacts show predicted value curves over an OOD trajectory and a separate failure episode. Figure~\ref{fig:video} displays three frames from each example; the two examples were selected from available rendered artifacts and are descriptive rather than a selection over the entire evaluation set. The full animations are available as Supplementary Videos S1 and S2.
 
-\section{Limitations and completion criteria}
+\begin{figure}[t]
+\centering
+\includegraphics[width=.96\linewidth]{\figdir fig5_video_examples.pdf}
+\caption{\textbf{Illustrative value traces in rendered robot videos.} Start, midpoint, and end frames from (a) an OOD episode rendered with T8--$H_{120}$ and (b) a failure episode rendered with T8--$H_{60}$; both use seed 3072. Video overlays display the prediction available up to each shown time. The failure example is from the expanded data collection and is not part of the all-success 0722 OOD set.}
+\label{fig:video}
+\end{figure}
 
-Two items remain before this draft can be treated as a final empirical paper. First, seed 1337 must be trained and evaluated with the same paired endpoint protocol. Second, an eight-frame input-mosaic control should be added if the paper is to compare structured \SpaceTime{} encoding against mosaic as a mechanism rather than as an engineering reference. Until then, the abstract and conclusion should retain the words ``current two-seed'' and ``provisional''.
+\clearpage
 
-The current data also come from one robot task family and one offline value-learning pipeline. The paper does not claim that 64 queries are sufficient for arbitrary histories, that longer spans always help, or that the encoder recovers a causal world model. Those are separate questions for future experiments.
+\section{Discussion}
+
+The controlled span experiment shows that a longer sampled visual history can be used through the same 64-query interface in this robot value-learning setting. Its OOD MSE gain repeats across three seeds even though the number of frames, query tokens, and trainable blocks is unchanged. The original-WCM comparison adds evidence for the complete history-encoding system, while its different training recipe prevents a component-only interpretation.
+
+The success/failure diagnostic shows strong separation on the checkpoint-validation cohort, including at an early fixed frame. Two features of this experiment constrain its interpretation. First, the original WCM score comes from a calibrated value output and the \SpaceTime{} score comes from a supervised risk head. Second, outcome and collection source are associated in the 18-episode validation split. A source-matched, episode-disjoint mixed-outcome evaluation would distinguish task-outcome cues from collection appearance and test whether the observed separation transfers to new trajectories.
+
+The fixed 64-query interface also has a computational cost: the T8 model has about 176.1 million parameters and an observed forward time of 12.9 ms per sample under the reported batch-four measurement, compared with 170.6 million parameters and 6.9 ms for original WCM. The current evidence covers one robot task family, two sampled spans, and an offline return target. It does not establish a monotone span scaling law or a guarantee that 64 queries retain all information in arbitrarily long histories.
 
 \section{Conclusion}
 
-We presented a bounded route from original WCM to \SpaceTime{}: encode eight visual observations with explicit temporal interaction and compress them into a fixed set of 64 latent queries before value prediction. Holding the frame count and latent bottleneck fixed, extending the sampled span from $H_{60}$ to $H_{120}$ currently lowers OOD MSE in two seeds. The result supports the narrower claim that a fixed latent bottleneck can usefully encode a longer history in this task setting. Completing the third seed and matched eight-frame mosaic control will determine whether that observation is robust enough for a stronger generalization claim.
+\SpaceTime{} compresses eight sampled two-camera observations into 64 learned queries for WCM value prediction. On the evaluated OOD episodes, increasing the history span from 60 to 120 sampled offsets lowered paired MSE in all three seeds without changing the frame or query count. The result identifies a useful operating range for fixed-query history encoding and motivates source-matched tests of outcome prediction and additional span settings.
+
+\appendix
+\section{Input-mosaic control}
+
+An input-level mosaic was evaluated as a reference. The four-frame version places observations in a $2\times2$ canvas; the eight-frame version places matched $H_{60}$ observations in a $2\times4$ canvas before a 224-pixel image processor. The eight-frame \SpaceTime{} system lowered OOD MSE relative to the eight-frame mosaic in seeds 3072 and 42 by $0.01800$ and $0.02455$, respectively (paired 95\% CIs $[-0.02065,-0.01538]$ and $[-0.02726,-0.02192]$). Pearson also increased by $0.02630$ and $0.02942$ with positive paired intervals. Mosaic frame count and canvas geometry are coupled in this comparison, so the result is a system reference rather than an isolated measurement of resolution loss.
 
 \bibliographystyle{plainnat}
 \bibliography{refs}
