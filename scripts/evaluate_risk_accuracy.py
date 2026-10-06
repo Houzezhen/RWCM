@@ -23,6 +23,7 @@ from world_critic.data import (
     build_processor,
     load_lerobot_dataset,
     load_episode_split,
+    _scalar_column,
 )
 from world_critic.distributed import initialize_distributed
 from world_critic.model import WorldCriticModel
@@ -157,6 +158,11 @@ def evaluate(args: argparse.Namespace) -> None:
     def make_loader(split: str) -> DataLoader:
         episode_ids = _resolve_episode_ids(config, checkpoint_path, split)
         eval_dataset = LeRobotWorldCriticDataset(dataset, config.data, episode_ids)
+        frame_by_row = (
+            _scalar_column(dataset, "frame_index", np.int64).reshape(-1)
+            if args.frame_index is not None
+            else None
+        )
         selected_rows = []
         for row_start, row_end in eval_dataset.episode_ranges.values():
             if row_end - row_start < eval_dataset.window:
@@ -168,7 +174,8 @@ def evaluate(args: argparse.Namespace) -> None:
                     (row_end - row_start - eval_dataset.window) * args.episode_fraction
                 )
             else:
-                first_frame = int(eval_dataset.frame_by_row[row_start])
+                assert frame_by_row is not None
+                first_frame = int(frame_by_row[row_start])
                 selected_row = (
                     row_start + args.frame_index - first_frame - (config.data.history_size - 1)
                 )
