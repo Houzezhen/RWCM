@@ -157,12 +157,27 @@ def evaluate(args: argparse.Namespace) -> None:
     def make_loader(split: str) -> DataLoader:
         episode_ids = _resolve_episode_ids(config, checkpoint_path, split)
         eval_dataset = LeRobotWorldCriticDataset(dataset, config.data, episode_ids)
-        selected_rows = [
-            row_start + round((row_end - row_start - eval_dataset.window) * args.episode_fraction)
-            for row_start, row_end in eval_dataset.episode_ranges.values()
-            if row_end - row_start >= eval_dataset.window
-            and (episode_ids is None or int(eval_dataset.episode_by_row[row_start]) in episode_ids)
-        ]
+        selected_rows = []
+        for row_start, row_end in eval_dataset.episode_ranges.values():
+            if row_end - row_start < eval_dataset.window:
+                continue
+            if episode_ids is not None and int(eval_dataset.episode_by_row[row_start]) not in episode_ids:
+                continue
+            if args.frame_index is None:
+                selected_row = row_start + round(
+                    (row_end - row_start - eval_dataset.window) * args.episode_fraction
+                )
+            else:
+                first_frame = int(eval_dataset.frame_by_row[row_start])
+                selected_row = (
+                    row_start + args.frame_index - first_frame - (config.data.history_size - 1)
+                )
+                if not row_start <= selected_row <= row_end - eval_dataset.window:
+                    raise ValueError(
+                        f"Frame {args.frame_index} has no valid prediction in episode "
+                        f"{int(eval_dataset.episode_by_row[row_start])}."
+                    )
+            selected_rows.append(selected_row)
         indices = np.searchsorted(eval_dataset.window_starts, selected_rows)
         if any(
             index >= len(eval_dataset.window_starts) or eval_dataset.window_starts[index] != row
@@ -258,8 +273,13 @@ def evaluate(args: argparse.Namespace) -> None:
             if args.mode == "risk"
             else "failure_score = -V(s); larger values indicate failure"
         ),
-        "endpoint_definition": "one window per episode at the specified fraction of available windows",
-        "episode_fraction": args.episode_fraction,
+        "endpoint_definition": (
+            "one prediction per episode at the specified frame index"
+            if args.frame_index is not None
+            else "one window per episode at the specified fraction of available windows"
+        ),
+        "episode_fraction": args.episode_fraction if args.frame_index is None else None,
+        "frame_index": args.frame_index,
         "calibration_split": args.calibration_split if args.mode == "value" else None,
         "metrics": metrics,
         "episodes": records,
@@ -282,11 +302,14 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--episode-fraction", type=float, default=1.0)
+    parser.add_argument("--frame-index", type=int)
     args = parser.parse_args()
     if not 0.0 <= args.threshold <= 1.0:
         raise ValueError("--threshold must be in [0,1].")
     if not 0.0 <= args.episode_fraction <= 1.0:
         raise ValueError("--episode-fraction must be in [0,1].")
+    if args.frame_index is not None and args.frame_index < 0:
+        raise ValueError("--frame-index must be non-negative.")
     evaluate(args)
 
 
