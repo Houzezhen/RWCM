@@ -1,0 +1,27 @@
+{
+ "_note": "pi*0.6-style distributional value model (evo framework, checkpoint evo_0824_new/checkpoints/last, training seed 1000) on the OOD test set. Transcribed from evo_vs_wcm_spacetime_report_20261023.md, sections 3.1 to 3.3; the comparison JSONs live on the training server under outputs/evo_eval_0824_ood/comparisons/. Endpoints are the WCM common manifest (21,832 per WCM seed), 125 episodes, 20,000 paired episode bootstrap resamples. Its absolute metrics are identical on the seed-3072 and seed-42 manifests.",
+ "model": {
+  "params_m": 670,
+  "visual_history": "single frame, two cameras",
+  "training_seed": 1000
+ },
+ "absolute": {
+  "mse": 0.0753,
+  "pearson": 0.511,
+  "centered_mse": 0.0264,
+  "bias": 0.221,
+  "per_episode_spearman": 0.447,
+  "episodes": 125,
+  "endpoints": 21832
+ },
+ "paired": {
+  "WCM": {
+   "3072": {"d_mse": -0.0764, "d_mse_ci": [-0.0922, -0.0599], "d_pearson": 0.3711, "d_pearson_ci": [0.3160, 0.4277]},
+   "42": {"d_mse": -0.0351, "d_mse_ci": [-0.0493, -0.0205], "d_pearson": 0.2855, "d_pearson_ci": [0.2155, 0.3548]}
+  },
+  "STMemory-60": {
+   "3072": {"d_mse": 0.0419, "d_mse_ci": [0.0309, 0.0536], "d_pearson": -0.3272, "d_pearson_ci": [-0.3688, -0.2854]},
+   "42": {"d_mse": 0.0506, "d_mse_ci": [0.0401, 0.0615], "d_pearson": -0.3396, "d_pearson_ci": [-0.3828, -0.2961]}
+  }
+ }
+}

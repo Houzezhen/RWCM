@@ -183,6 +183,11 @@ def configure_training_stage(model: torch.nn.Module, config: TrainConfig) -> dic
         unfreeze(raw_model.risk_head)
         unfreeze(raw_model.q_action_encoder)
         unfreeze(raw_model.q_head)
+        if config.model.spacetime_original_encoding:
+            raw_model.vision_encoder.camera_embedding.requires_grad_(True)
+        if config.model.spacetime_original_readout:
+            raw_model.view_pool_query.requires_grad_(True)
+            unfreeze(raw_model.view_attention)
     elif stage == "spacetime_full":
         for parameter in raw_model.parameters():
             parameter.requires_grad_(True)
@@ -191,9 +196,9 @@ def configure_training_stage(model: torch.nn.Module, config: TrainConfig) -> dic
         # Teacher-free current states come from SpaceTime tokens. These legacy
         # view-pooling parameters only touch the detached next-state target and
         # must stay frozen under DDP find_unused_parameters=False.
-        raw_model.vision_encoder.camera_embedding.requires_grad_(False)
-        raw_model.view_pool_query.requires_grad_(False)
-        raw_model.view_attention.requires_grad_(False)
+        raw_model.vision_encoder.camera_embedding.requires_grad_(config.model.spacetime_original_encoding)
+        raw_model.view_pool_query.requires_grad_(config.model.spacetime_original_readout)
+        raw_model.view_attention.requires_grad_(config.model.spacetime_original_readout)
         unfrozen_layers = list(range(len(raw_model.vision_encoder.encoder_layers())))
     else:
         raise ValueError(f"Unsupported training_stage={stage!r}.")

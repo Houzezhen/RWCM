@@ -853,6 +853,8 @@ class SpaceTimePerceiverEncoder(nn.Module):
         dim = config.latent_dim
         self.max_frame_count = config.spacetime_frame_count
         self.temporal_enabled = config.spacetime_temporal_enabled
+        self.original_encoding = config.spacetime_original_encoding
+        self.original_readout = config.spacetime_original_readout
         self.time_embedding = nn.Parameter(
             torch.zeros(1, self.max_frame_count, 1, 1, dim)
         )
@@ -867,28 +869,28 @@ class SpaceTimePerceiverEncoder(nn.Module):
                 norm_first=True,
                 batch_first=True,
             )
-            for _ in range(config.spacetime_layers)
+            for _ in range(0 if self.original_encoding else config.spacetime_layers)
         )
         self.temporal_layer_scales = (
             nn.ParameterList(
                 nn.Parameter(torch.full((dim,), config.spacetime_layerscale_init))
-                for _ in range(config.spacetime_layers)
+                for _ in range(0 if self.original_encoding else config.spacetime_layers)
             )
             if config.spacetime_layerscale_init is not None
             else None
         )
         self.temporal_norm = nn.LayerNorm(dim)
-        self.perceiver_queries = nn.Parameter(
+        self.perceiver_queries = None if self.original_readout else nn.Parameter(
             torch.zeros(1, config.perceiver_queries, dim)
         )
         self.perceiver_layers = nn.ModuleList(
             _PerceiverReducerLayer(dim, config.spacetime_heads, config.perceiver_mlp_ratio)
-            for _ in range(config.perceiver_layers)
+            for _ in range(0 if self.original_readout else config.perceiver_layers)
         )
         self.perceiver_layer_scales = (
             nn.ParameterList(
                 nn.Parameter(torch.full((dim,), config.spacetime_layerscale_init))
-                for _ in range(config.perceiver_layers)
+                for _ in range(0 if self.original_readout else config.perceiver_layers)
             )
             if config.spacetime_layerscale_init is not None
             else None
@@ -896,7 +898,8 @@ class SpaceTimePerceiverEncoder(nn.Module):
         self.output_projection = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim))
         self.register_buffer("blend_gate", torch.tensor(0.0), persistent=True)
         nn.init.normal_(self.time_embedding, std=0.02)
-        nn.init.normal_(self.perceiver_queries, std=0.02)
+        if not self.original_readout:
+            nn.init.normal_(self.perceiver_queries, std=0.02)
 
     def set_gate(self, value: float) -> None:
         if not 0.0 <= value <= 1.0:
@@ -910,7 +913,7 @@ class SpaceTimePerceiverEncoder(nn.Module):
             )
         return torch.lerp(teacher, student, self.blend_gate.to(student.dtype))
 
-    def forward(self, frame_tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, frame_tokens: torch.Tensor, view_pool=None) -> tuple[torch.Tensor, torch.Tensor]:
         if frame_tokens.ndim != 5:
             raise ValueError(
                 f"SpaceTime frame tokens must be [B,T,V,P,D], got {frame_tokens.shape}"
@@ -930,9 +933,9 @@ class SpaceTimePerceiverEncoder(nn.Module):
         tokens = (
             tokens
             + self.time_embedding[:, self.max_frame_count - frames :]
-            + self.camera_embedding[:, :, :views]
+            + (0 if self.original_encoding else self.camera_embedding[:, :, :views])
         )
-        if self.temporal_enabled:
+        if self.temporal_enabled and not self.original_encoding:
             temporal = tokens.permute(0, 2, 3, 1, 4).reshape(
                 batch * views * patches, frames, dim
             )
@@ -947,6 +950,10 @@ class SpaceTimePerceiverEncoder(nn.Module):
             tokens = self.temporal_norm(temporal).view(
                 batch, views, patches, frames, dim
             ).permute(0, 3, 1, 2, 4)
+        if self.original_readout:
+            # Preserve real temporal positions for the original causal trunk.
+            visual_tokens = view_pool(tokens[:, :, :, 0])
+            return visual_tokens, visual_tokens[:, -1:]
         context = tokens.reshape(batch, frames * views * patches, dim)
         queries = self.perceiver_queries.expand(batch, -1, -1)
         for index, layer in enumerate(self.perceiver_layers):
@@ -1632,8 +1639,15 @@ class WorldCriticModel(nn.Module):
                 raise ValueError("history_images and images must have the same batch size.")
             if history_images.device != images.device:
                 raise ValueError("history_images and images must be on the same device.")
-            history_tokens = self.vision_encoder.encode_tokens(history_images)
-            student_visual_tokens, student_current = self.spacetime_encoder(history_tokens)
+            if self.config.spacetime_original_encoding:
+                # Original WCM per-frame CLS + camera embedding; no patch grid
+                # or new temporal layers. The reducer retains time-slot embeddings.
+                history_tokens = self.vision_encoder(history_images).unsqueeze(3)
+            else:
+                history_tokens = self.vision_encoder.encode_tokens(history_images)
+            student_visual_tokens, student_current = self.spacetime_encoder(
+                history_tokens, view_pool=self.pool_views
+            )
             gate = float(self.spacetime_encoder.blend_gate)
             if self.config.spacetime_teacher_enabled:
                 if teacher_current_state is None:
@@ -1751,7 +1765,15 @@ class WorldCriticModel(nn.Module):
             instruction_input_ids,
             instruction_attention_mask,
         )
-        if self.spacetime_encoder is None:
+        if self.spacetime_encoder is not None and self.config.spacetime_original_readout:
+            history_mask = torch.ones(
+                student_visual_tokens.shape[:2], dtype=torch.bool,
+                device=student_visual_tokens.device,
+            )
+            context = self.encode_context(
+                student_visual_tokens, text_tokens, text_mask, history_mask
+            )[:, -1:]
+        elif self.spacetime_encoder is None:
             context = self.encode_context(
                 state_latents[:, :-1], text_tokens, text_mask, valid_mask
             )

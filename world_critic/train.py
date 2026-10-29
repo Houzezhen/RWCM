@@ -712,7 +712,7 @@ def run() -> None:
                         else early_value >= config.early_stop_threshold
                     )
 
-            if is_best:
+            if is_best and not config.checkpoint_last_only:
                 save_training_checkpoint(
                     output_dir / "checkpoints" / "best.pt",
                     model,
@@ -725,7 +725,9 @@ def run() -> None:
                     ctx,
                 )
 
-            if (epoch + 1) % config.save_every_epochs == 0 or epoch + 1 == config.epochs:
+            if not config.checkpoint_last_only and (
+                (epoch + 1) % config.save_every_epochs == 0 or epoch + 1 == config.epochs
+            ):
                 save_training_checkpoint(
                     output_dir / "checkpoints" / f"epoch-{epoch:04d}.pt",
                     model,
@@ -804,7 +806,7 @@ def run() -> None:
 
             collectively_validate(ctx, "Alignment summary write", write_alignment_summary)
 
-        if config.deploy_from_best:
+        if config.deploy_from_best and not config.checkpoint_last_only:
             best_payload = load_checkpoint_payload(
                 output_dir / "checkpoints" / "best.pt", ctx
             )

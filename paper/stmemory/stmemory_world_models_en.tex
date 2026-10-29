@@ -1,0 +1,410 @@
+% !TeX program = pdflatex
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[margin=2.25cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=green!40!black,urlcolor=blue!60!black]{hyperref}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf,labelsep=period}
+\setlength{\emergencystretch}{1em}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.8}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.7}
+
+\newcommand{\figdir}{figures/}
+\makeatletter
+\newcommand{\tabinput}[1]{\@@input #1 }
+\makeatother
+
+\title{STMemory: Fixed-Query Spatiotemporal Memory for World Models}
+\author{WCM Project}
+\date{October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A world model must often judge the present from evidence that is no longer in view. In robotic manipulation, two moments that look identical can lie at very different stages of a task, and a model that sees only the latest frames cannot tell them apart. Giving the model access to a longer history usually means feeding it more tokens, so memory and computational cost grow together. We present SpaceTime Memory (STMemory), a visual memory module that breaks this coupling. STMemory samples observations sparsely across an adjustable time span, relates them through factorized spatiotemporal attention, and distils them into a fixed set of learned queries, so the representation passed to the predictor has the same size however far back the memory reaches. Built into a JEPA-style world critic for real-robot manipulation, STMemory reduces out-of-distribution value error by about 80\% relative to the original model, outperforms VIP and IQL value learners given the same history, and raises the correlation between predicted and true returns from 0.21 to 0.86. Doubling the memory span lowers error by a further 20\% at identical cost, and the resulting value estimate separates successful from failed episodes with perfect accuracy. These results show that how far a world model remembers matters as much as how much it encodes, and that fixed-query memory delivers long temporal reach at constant cost.
+\end{abstract}
+
+\section{Introduction}
+
+Imagine a robot arm hovering above a button. From a single frame, it is impossible to say whether the arm is about to press the button or has just finished pressing it, yet the two situations call for opposite judgments about how the task is going. World models face this ambiguity constantly. They learn to predict how an environment evolves so that an agent can plan and evaluate its behaviour~\citep{ha2018worldmodels,hafner2019planet,hafner2025mastering}, but each camera frame reveals only part of the underlying state. Reliable prediction therefore depends on memory, the ability to bring earlier evidence to bear on the current decision.
+
+Existing world models provide memory in three main ways (Fig.~\ref{fig:taxonomy}). Many recent models condition on a short window of recent frames, which keeps computation small but discards anything that happened earlier~\citep{fei2026wcm}. Video transformers instead encode every frame as a dense set of spatiotemporal tokens~\citep{arnab2021vivit,bertasius2021timesformer,bardes2024vjepa}. This preserves direct access to the past, but the number of tokens, and with it the cost of every downstream computation, grows with the length of the history. Recurrent world models compress the past into a running latent state~\citep{ha2018worldmodels,hafner2019planet,hafner2025mastering}, which is compact but forces information through a sequential bottleneck in which earlier observations can only be recovered indirectly.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{\figdir fig01_taxonomy.pdf}
+\caption{\textbf{Four ways to give a world model memory.} \textbf{a}, A short window of recent frames. \textbf{b}, Dense tokens for every frame. \textbf{c}, A recurrent latent state. \textbf{d}, STMemory reads a sparse sample of the past into a fixed number of learned queries.}
+\label{fig:taxonomy}
+\end{figure}
+
+We argue that temporal reach and representation size should be controlled separately. A model should be able to look further into the past without paying for it in tokens, and it should read earlier frames directly rather than through a chain of state updates. This is the principle behind SpaceTime Memory (STMemory). STMemory samples a small number of observations spread across a chosen time span, encodes them with a shared vision transformer~\citep{dosovitskiy2021vit}, relates them through attention along the time axis, and compresses the result into a fixed set of learned queries in the spirit of the Perceiver~\citep{jaegle2021perceiver}. Widening the span changes only which frames are sampled. The number of tokens, the size of the memory and the cost of the predictor remain unchanged.
+
+The importance of this decoupling is practical as well as conceptual. Robots operate at high frame rates, and the events that determine the outcome of a task can lie seconds in the past. A memory whose cost is fixed by design can reach these events without slowing down prediction, and its compact output can be attached to an existing world model without changing the predictor.
+
+We build STMemory into the World Critic Model (WCM)~\citep{fei2026wcm}, a JEPA-style world model that jointly predicts future latent states and task values, and evaluate it on real-robot manipulation. Our contributions are as follows.
+\begin{itemize}[leftmargin=1.4em,itemsep=1pt,topsep=2pt]
+\item We introduce STMemory, a spatiotemporal memory module that decouples the temporal reach of a world model from the size of its representation.
+\item We show that STMemory reduces out-of-distribution value error by about 80\% relative to the original WCM and outperforms VIP~\citep{ma2023vip} and IQL~\citep{kostrikov2022iql} value learners that receive the same visual history, as well as a four times larger single-frame $\pi^{*}_{0.6}$ value model~\citep{pistar06}.
+\item Through a controlled ablation, we show that doubling the memory span at fixed frame and query counts lowers error by a further 16 to 24\% across seeds.
+\item We show that the memory-augmented value estimate separates successful from failed episodes without a dedicated classification head.
+\end{itemize}
+
+\section{Related Work}
+
+\paragraph{World models and predictive representations.}
+World models learn latent dynamics for simulation, planning and policy learning~\citep{ha2018worldmodels,hafner2019planet,hafner2025mastering}, and recent work extends them to interactive generation~\citep{bruce2024genie} and to coupled video and action prediction for robot control~\citep{wang2026dimwam,zhou2026rollingwam}. Joint-Embedding Predictive Architectures learn by predicting target representations rather than pixels~\citep{assran2023ijepa,bardes2024vjepa}, which focuses the model on predictable structure. WCM applies this principle to robotic value estimation by predicting future latents together with task values~\citep{fei2026wcm}. STMemory is complementary to these predictive objectives and changes only the visual evidence available to the predictor.
+
+\paragraph{Temporal modelling and token compression.}
+Video transformers factorize attention over space and time to make long clips tractable~\citep{arnab2021vivit,bertasius2021timesformer}. Learned query bottlenecks compress large token sets into a small latent array, as in the Perceiver~\citep{jaegle2021perceiver}, TokenLearner~\citep{ryoo2021tokenlearner}, the Perceiver Resampler of Flamingo~\citep{alayrac2022flamingo} and the Q-Former of BLIP-2~\citep{li2023blip2}. STMemory combines factorized temporal attention with a query bottleneck and applies them to a sparse sample of the past, so that the span of memory can be enlarged while the bottleneck stays fixed.
+
+\paragraph{Value learning for robot manipulation.}
+Visual value functions provide progress estimates and rewards for robot learning. VIP learns a goal-conditioned embedding whose distances act as values~\citep{ma2023vip}, and IQL learns value functions offline through expectile regression~\citep{kostrikov2022iql}. $\pi^{*}_{0.6}$ trains a distributional value function on a vision-language backbone and uses its advantage estimates to improve a robot policy~\citep{pistar06}. These methods treat temporal context as part of the input design. STMemory instead provides a dedicated memory representation, and we compare against VIP and IQL under the same visual history and against the single-frame $\pi^{*}_{0.6}$ value function.
+
+\section{Method}
+
+\subsection{Predictive world model}
+
+At step $t$, the agent receives camera observations $x_{\le t}$ from $C$ synchronized views and a task instruction $\ell$. Following JEPA~\citep{assran2023ijepa,bardes2024vjepa}, a context encoder maps the available evidence to a representation $c_t$, and a predictor forecasts the latent of the next observation rather than its pixels. WCM~\citep{fei2026wcm} attaches a state-value head $\hat V_t=v_\omega(c_t)$, an action-value head and an action-conditioned dynamics head,
+\begin{equation}
+\hat z_{t+1}=z_t+\Delta_\psi\bigl(c_t,a_t\bigr),
+\label{eq:dyn}
+\end{equation}
+where $z_t$ is the current visual latent and $a_t$ the action. Predicting an increment anchors the forecast to the present state. Training minimizes
+\begin{equation}
+\mathcal L=\bigl(\hat V_t-G_t\bigr)^2+\lambda_{\mathrm{dyn}}\,\bigl\|\hat z_{t+1}-\operatorname{sg}(z_{t+1})\bigr\|_2^2+\lambda_{\mathrm{reg}}\,\mathcal L_{\mathrm{reg}},
+\label{eq:loss}
+\end{equation}
+where $G_t$ is the normalized return, $\operatorname{sg}$ stops gradients through the target latent and $\mathcal L_{\mathrm{reg}}$ is a Gaussian embedding regularizer that prevents representational collapse. Future observations serve only as targets. STMemory replaces the visual evidence entering $c_t$ and leaves this objective unchanged.
+
+\subsection{Sparse memory sampling}
+
+STMemory represents the past by $T$ observations drawn from a window of $k$ frames. Given offsets $k=\delta_1>\delta_2>\dots>\delta_T=0$, the observation memory is
+\begin{equation}
+\mathcal X_t^{(k)}=\bigl(x_{u_1},\dots,x_{u_T}\bigr),\qquad u_i=\max\bigl(0,\,t-\delta_i\bigr),
+\label{eq:sample}
+\end{equation}
+ordered from oldest to current, with indices before the episode start clamped to its first frame. The span $k$ sets how far the memory reaches, while $T$ sets how many observations are processed. Because the two are independent, the span can grow without increasing the input size. The memory is rebuilt from within-episode observations at every prediction.
+
+\subsection{Spatiotemporal encoding}
+
+A shared vision transformer $\phi$ encodes every view of every sampled observation into one class token and a grid of patch tokens~\citep{dosovitskiy2021vit}. For time slot $i$, view $v$ and token $j$, the input representation is
+\begin{equation}
+E_{i,v,j}=\phi\bigl(x^{(v)}_{u_i}\bigr)_j+e^{\mathrm{time}}_i+e^{\mathrm{cam}}_v,
+\label{eq:embed}
+\end{equation}
+where $e^{\mathrm{time}}_i$ and $e^{\mathrm{cam}}_v$ are learned slot and camera embeddings. Indexing time embeddings by slot rather than by elapsed frames allows the same parameters to serve any span.
+
+Temporal relations are modelled by attention along the time axis at each spatial position, in the factorized form used by video transformers~\citep{bertasius2021timesformer,arnab2021vivit}. For the sequence $Y_{v,j}=(E_{1,v,j},\dots,E_{T,v,j})$, each layer applies
+\begin{equation}
+Y_{v,j}\leftarrow Y_{v,j}+\operatorname{MHA}\bigl(\operatorname{LN}(Y_{v,j})\bigr),\qquad
+Y_{v,j}\leftarrow Y_{v,j}+\operatorname{FFN}\bigl(\operatorname{LN}(Y_{v,j})\bigr),
+\label{eq:temporal}
+\end{equation}
+where $\operatorname{MHA}$ is multi-head self-attention, $\operatorname{LN}$ layer normalization and $\operatorname{FFN}$ a feed-forward block. Each patch thereby gathers information from the same location at every sampled time, which captures motion and state changes without an attention matrix over all tokens. The outputs are flattened into a sequence $S_t\in\mathbb R^{N\times d}$ with $N=TCP$ tokens of width $d$, where $P$ is the number of tokens per view.
+
+\subsection{Fixed-query compression}
+
+A set of $R$ learned queries $\mathbf Q\in\mathbb R^{R\times d}$ reads the spatiotemporal sequence through cross-attention~\citep{jaegle2021perceiver},
+\begin{equation}
+\mathbf Q\leftarrow\mathbf Q+\operatorname{MHA}\bigl(\operatorname{LN}(\mathbf Q),\operatorname{LN}(S_t)\bigr),\qquad
+\mathbf Q\leftarrow\mathbf Q+\operatorname{FFN}\bigl(\operatorname{LN}(\mathbf Q)\bigr),
+\label{eq:query}
+\end{equation}
+where queries provide the attention queries and $S_t$ the keys and values. After the final layer, a normalization and linear projection $\Pi$ produce the memory
+\begin{equation}
+\mathcal M_t^{(k)}=\Pi\Bigl(\Psi_\theta\bigl(\phi(\mathcal X_t^{(k)})\bigr)\Bigr)\in\mathbb R^{R\times d},
+\label{eq:memory}
+\end{equation}
+where $\Psi_\theta$ collects the embedding, temporal and query layers. The size of $\mathcal M_t^{(k)}$ depends only on $R$ and $d$. All $R$ memory tokens enter the context encoder together with the instruction embedding, $c_t=C_\theta(\mathcal M_t^{(k)},e_\ell)$, and their mean serves as the visual latent $z_t$ in Eq.~\eqref{eq:dyn}.
+
+\subsection{Outcome classification from value}
+
+A value function that tracks task progress should also indicate whether an episode will succeed. We classify episode $i$ as successful when its predicted value exceeds a threshold,
+\begin{equation}
+\hat y_i=\mathbf 1\bigl[\hat V_i>\tau_{-i}\bigr],
+\label{eq:cls}
+\end{equation}
+where $\tau_{-i}$ is chosen on all other episodes to maximize balanced accuracy and is then applied to episode $i$. No classification head or additional training is involved.
+
+\subsection{Computational cost}
+
+Temporal attention scales as $O(CPT^2)$ and query cross-attention as $O(RTCP)$. Neither term depends on the span $k$, and the predictor always receives $R$ memory tokens. Extending the reach of memory is therefore free in both computation and representation size, and the only cost of memory is set by the choice of $T$ and $R$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{\figdir fig02_architecture.pdf}
+\caption{\textbf{STMemory architecture.} \textbf{a}, Observations from two cameras are sampled across the memory span. \textbf{b}, A shared ViT encodes each view, and factorized temporal attention links each patch across time. \textbf{c}, Learned queries compress the token sequence into a fixed memory $\mathcal M_t$. \textbf{d}, The memory conditions the WCM value, action-value and dynamics heads. \textbf{e}, Two memory spans with identical cost.}
+\label{fig:arch}
+\end{figure}
+
+\section{Experiments}
+
+\subsection{Experimental setup}
+
+\paragraph{Task and datasets.}
+We evaluate on a real-robot manipulation task in which a six-axis arm with a gripper presses a button following the instruction \emph{press the toilet button}. Each episode provides synchronized primary and wrist camera streams at 30~Hz. The training set contains 177 episodes collected in three sessions in the same scene and includes both successful and failed attempts, split into 159 training and 18 validation episodes. We test on two held-out sets. The in-distribution test set contains 145 new episodes from the training scene. The out-of-distribution (OOD) test set contains 125 episodes recorded after the scene layout was changed by placing a board over the work surface, which alters the appearance and geometry of the environment. The OOD set is our primary benchmark.
+
+\paragraph{Baselines.}
+We compare against the original WCM~\citep{fei2026wcm} trained with its published recipe, and against two established value-learning methods. VIP~\citep{ma2023vip} learns a value-implicit embedding from successful trajectories, and IQL~\citep{kostrikov2022iql} learns a critic through temporal-difference learning with expectile regression. Both receive exactly the same eight-frame history with a span of 120 frames, the same two cameras, the same instruction and the current robot state as STMemory-120, using frozen ResNet-18~\citep{he2016resnet} image features and CLIP text features~\citep{radford2021clip}. We further compare against the distributional value function of $\pi^{*}_{0.6}$~\citep{pistar06}, which we re-implement and train on an earlier collection from the training scene. It reads the current frame of both cameras at $384\times384$ resolution together with the robot state written as text, combines a SigLIP image encoder~\citep{zhai2023siglip} with the 270M-parameter Gemma~3 language model~\citep{gemma2025gemma3}, and predicts a distribution over 201 value bins. With about 670M parameters it is four times the size of WCM, and its training target adds a bonus to the return in the middle of each episode. We denote our models by their memory span as STMemory-60 and STMemory-120.
+
+\paragraph{Metrics.}
+Value prediction is measured by mean squared error (MSE) against the normalized return, Pearson correlation, which reflects whether states are ranked correctly by expected return, and centered MSE, which removes a constant offset. All comparisons use identical episode and frame endpoints. Confidence intervals come from 20,000 paired bootstrap resamples over episodes. Outcome classification is evaluated on the 18 validation episodes, 13 successful and five failed, using the earliest frame available to all models.
+
+\paragraph{Implementation details.}
+The vision encoder is ViT-B/16 at $224\times224$ resolution, and STMemory uses eight observations, two temporal layers, two query layers and 64 queries of width 384. Training proceeds in two stages. In the joint stage, the newly added memory layers are trained with a tenfold larger learning rate while only the top four ViT blocks are unfrozen. This lets the randomly initialized memory adapt quickly without disturbing the pretrained visual features. A short full fine-tuning stage at a lower learning rate then aligns the entire backbone with the memory. All results are averaged over three random seeds unless stated otherwise. Full hyperparameters and the compute environment are listed in Appendix~\ref{app:impl}.
+
+\subsection{Main results}
+
+Table~\ref{tab:main} and Fig.~\ref{fig:main} summarize value prediction on both test sets. On the OOD benchmark, STMemory-60 reduces value MSE by 79.8\% relative to the original WCM and raises Pearson correlation from 0.21 to 0.84, with every per-seed improvement significant. STMemory-120 performs best on every metric. Compared with VIP and IQL, which receive the same history, it lowers MSE by 70.3\% and 52.0\% respectively, and both paired confidence intervals lie entirely below zero.
+
+The $\pi^{*}_{0.6}$ value model separates the effect of model size from that of memory. Its larger backbone lowers the error of WCM, yet with only the current frame it reaches a correlation of 0.51. On the same frames, STMemory-60 reduces its MSE by 61.5\% on average over two seeds and raises correlation to 0.84, and every paired confidence interval excludes zero. Adding memory at the size of WCM is worth more than a fourfold larger single-frame model.
+
+The gap in correlation is especially informative. VIP, IQL and the $\pi^{*}_{0.6}$ value model reach correlations of at most 0.51, so their estimates capture only part of the variation in return across states. STMemory exceeds 0.84 on both test sets, so its estimates order states closely by their true returns. The centered MSE confirms that the gain does not come from a constant calibration offset. On the in-distribution test set, STMemory lowers MSE by roughly a factor of four relative to WCM, showing that the benefit of memory holds in the training scene as well as under distribution shift.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Value prediction on the out-of-distribution and in-distribution test sets.} Mean $\pm$ standard deviation over three seeds. $^{\dagger}$Evaluated on the 21,832 OOD frames available to the WCM observation window. $^{\ast}$Single seed.}
+\label{tab:main}
+\footnotesize
+\setlength{\tabcolsep}{3.6pt}
+\begin{tabular}{llccccc}
+\toprule
+& & \multicolumn{3}{c}{Out-of-distribution} & \multicolumn{2}{c}{In-distribution} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-7}
+Method & Visual history & MSE $\downarrow$ & Pearson $\uparrow$ & Centered MSE $\downarrow$ & MSE $\downarrow$ & Pearson $\uparrow$ \\
+\midrule
+\tabinput{tables/main.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{\figdir fig03_main_results.pdf}
+\caption{\textbf{Value prediction performance.} \textbf{a},\textbf{b}, OOD value MSE and Pearson correlation; markers show individual seeds. $^\dagger$Evaluated on the frames available to the WCM observation window. \textbf{c}, Each run placed by its error and correlation on both test sets.}
+\label{fig:main}
+\end{figure}
+
+\subsection{Ablation on memory span}
+
+To isolate the role of temporal reach, we compare STMemory-60 and STMemory-120, which share the architecture, the number of observations, the 64-query bottleneck, the initialization and the training schedule. They differ only in the offsets used to sample the past (Appendix~\ref{app:offsets}). Table~\ref{tab:span} and Fig.~\ref{fig:span} report the paired comparison on the OOD set.
+
+Doubling the span reduces MSE for every seed, by 20.1\% on average, and all three confidence intervals lie below zero. Correlation increases for every seed, with significant gains for two of them. Because the wider span covers twice the time with the same eight observations, these results show that distant observations carry information that remains useful after compression into the fixed memory. Reach, rather than sampling density, is the more valuable resource in this setting.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Effect of memory span on OOD value prediction.} Both variants use eight observations and 64 queries. The last column gives the 95\% confidence interval of the Pearson gain.}
+\label{tab:span}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{3}{c}{MSE $\downarrow$} & \multicolumn{3}{c}{Pearson $\uparrow$} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+& Span 60 & Span 120 & Reduction (\%) & Span 60 & Span 120 & Gain CI \\
+\midrule
+\tabinput{tables/span.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{\figdir fig04_memory_span.pdf}
+\caption{\textbf{A wider memory span improves value prediction at fixed cost.} \textbf{a}, OOD MSE of each seed for the two spans. \textbf{b}, Relative MSE reduction with 95\% confidence intervals. \textbf{c}, Pearson gain with 95\% confidence intervals.}
+\label{fig:span}
+\end{figure}
+
+% ---------------------------------------------------------------------------
+% Module ablation, to be filled once the runs listed in README_redesign.md are available.
+% \begin{table}[t]
+% \centering
+% \caption{\textbf{Contribution of each STMemory component.} OOD test set, three seeds.}
+% \label{tab:modules}
+% \small
+% \begin{tabular}{lccc}
+% \toprule
+% Variant & MSE $\downarrow$ & Pearson $\uparrow$ & Memory tokens \\
+% \midrule
+% STMemory-120 & 0.020 & 0.86 & 64 \\
+% without temporal attention & & & 64 \\
+% mean pooling instead of queries & & & 1 \\
+% 16 queries & & & 16 \\
+% 128 queries & & & 128 \\
+% four observations & & & 64 \\
+% primary camera only & & & 64 \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
+% ---------------------------------------------------------------------------
+
+\paragraph{Efficiency.}
+Table~\ref{tab:eff} lists the cost of adding memory. STMemory increases the parameter count by 3\% and processes eight observations in 12.9~ms per sample, compared with 7.0~ms for the single-frame WCM. This corresponds to more than 75 predictions per second, well above the 30~Hz camera rate. Since the predictor always receives 64 memory tokens, the span ablation above comes at no additional cost.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Model size and inference cost,} measured at batch size four on one GPU.}
+\label{tab:eff}
+\small
+\begin{tabular}{lcccc}
+\toprule
+Model & Parameters & Observations & Memory tokens & Latency per sample \\
+\midrule
+WCM & 170.6\,M & 1 & 1 & 7.0 ms \\
+STMemory-60 and STMemory-120 & 176.1\,M & 8 & 64 & 12.9 ms \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Outcome classification}
+
+We next ask whether the value estimate encodes task outcome. Using the rule in Eq.~\eqref{eq:cls} at the earliest common frame, STMemory-120 classifies every validation episode correctly for all three seeds, and STMemory-60 misses a single failure in one seed (Table~\ref{tab:cls}). The original WCM reaches 66.7\% accuracy, below the 72.2\% obtained by always predicting success. The AUROC of the raw value is 1.0 for both STMemory variants, which means that every successful episode receives a higher value than every failed one.
+
+Fig.~\ref{fig:cls}b shows why. For WCM, the held-out margins of successful and failed episodes overlap, and many successful episodes fall below the threshold. With STMemory, successes and failures form two clearly separated groups on either side of the decision boundary. The value learned with memory therefore separates outcomes directly, and a single threshold suffices to turn it into a reliable outcome classifier.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Success and failure classification from the value estimate.} 18 validation episodes, mean $\pm$ standard deviation over three seeds.}
+\label{tab:cls}
+\small
+\begin{tabular}{lcccc}
+\toprule
+Model & Accuracy (\%) & Balanced accuracy (\%) & Failure recall (\%) & AUROC \\
+\midrule
+\tabinput{tables/classification.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{\figdir fig05_outcome_classification.pdf}
+\caption{\textbf{Outcome classification from the value estimate.} \textbf{a}, Classification scores; markers show seeds. \textbf{b}, Held-out value margins of all episodes and seeds; positive margins predict success.}
+\label{fig:cls}
+\end{figure}
+
+\subsection{Qualitative results}
+
+Fig.~\ref{fig:qual} shows predicted values over two complete episodes. In the successful OOD episode, the value of STMemory-120 rises steadily from $-0.78$ to nearly zero as the arm approaches and presses the button. In the failed episode, the value of STMemory-60 stays low through the first half while the arm fails to make progress, and it remains well below the level of the successful episode at the end. The estimates thus follow task progress in a smooth and interpretable way. Full videos are provided as Supplementary Videos S1 and S2.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{\figdir fig06_qualitative.pdf}
+\caption{\textbf{Predicted value over real robot episodes.} Frames at five stages of \textbf{a}, a successful OOD episode and \textbf{b}, a failed episode. The overlay shows the predicted value up to the current frame.}
+\label{fig:qual}
+\end{figure}
+
+\FloatBarrier
+\section{Conclusion}
+
+We presented STMemory, a spatiotemporal memory module that lets a world model reach further into the past without enlarging its representation. By sampling observations sparsely across a time span, relating them through factorized temporal attention and compressing them into a fixed set of learned queries, STMemory decouples temporal reach from cost. In real-robot manipulation, it reduced out-of-distribution value error by about 80\% relative to the original WCM, outperformed VIP and IQL under the same visual history as well as a four times larger single-frame value model, and produced value estimates that separate successful from failed episodes. A wider span improved accuracy further at identical cost. These findings identify temporal reach as a central design variable for memory in world models. Promising directions include learning where in the past to sample, extending the memory with a persistent state across episodes, and applying STMemory to planning and control in other world-model architectures, where its fixed-size interface allows integration without changes to the predictor.
+
+\appendix
+\section{Implementation details}
+\label{app:impl}
+
+\begin{table}[H]
+\centering
+\caption{\textbf{Hyperparameters.}}
+\label{tab:hyper}
+\small
+\begin{tabular}{lp{11.2cm}}
+\toprule
+\multicolumn{2}{l}{\emph{Architecture}} \\
+Vision encoder & ViT-B/16, $224\times224$ input, projection to width 384 \\
+Text encoder & frozen CLIP ViT-B/32 text tower, two fusion layers \\
+Context trunk & six blocks, eight heads, feed-forward ratio four, dropout 0.1 \\
+Dynamics head & three blocks \\
+STMemory & eight observations, two cameras, two temporal layers, two query layers \\
+Memory & 64 queries of width 384, eight heads, feed-forward ratio two \\
+Residual scaling & learned LayerScale initialized to $10^{-3}$ \\
+\midrule
+\multicolumn{2}{l}{\emph{Optimization}} \\
+Optimizer & AdamW, $\beta_1=0.9$, $\beta_2=0.95$, weight decay $10^{-3}$ \\
+Precision and clipping & bf16, gradient norm 1.0 \\
+Initialization & WCM checkpoint trained on the same training split \\
+Joint stage & ten epochs, learning rate $10^{-5}$, memory layers $10\times$, 150 warm-up steps, top four ViT blocks trainable \\
+Fine-tuning stage & three epochs, learning rate $2\times10^{-6}$, 50 warm-up steps, full backbone trainable \\
+Schedule & cosine decay, batch size four \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{\textbf{Compute environment.}}
+\label{tab:env}
+\small
+\begin{tabular}{ll}
+\toprule
+Operating system & Ubuntu 22.04.5 LTS \\
+Processor & AMD EPYC 7K62, 48 cores \\
+Memory & 252 GiB \\
+GPUs & NVIDIA RTX PRO 5000 Blackwell and NVIDIA RTX 5880 Ada, 48 GiB each \\
+Software & Python 3.12, PyTorch 2.7.1, CUDA 12.6, Transformers 5.15 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Baseline adaptation.}
+VIP and IQL use frozen ResNet-18 features for both cameras at all eight sampled time steps, CLIP text features and a trainable projection and value network. Both are trained for 1,000 updates with batch size 128, AdamW and learning rate $3\times10^{-4}$, and the checkpoint with the lowest validation MSE is selected. The VIP value head reads the value-implicit embedding, and the IQL critic uses twin $Q$ networks with expectile 0.7 and no discounting, matching the return definition.
+
+The $\pi^{*}_{0.6}$ value model uses a SigLIP So400m/14 image encoder at $384\times384$ resolution for each camera and a Gemma~3 270M language model, which reads the instruction and the discretized robot state as text, and a value head over 201 bins. Its training target is the normalized return with a failure penalty and a mid-episode bonus of scale 0.3. A single model is available. Its predictions on all OOD frames are produced with its own inference code and scored against the same normalized returns as every other model.
+
+\section{Sampling offsets}
+\label{app:offsets}
+
+The offsets $\delta_i$ in Eq.~\eqref{eq:sample}, in frames before the current step, are
+\begin{align*}
+\text{STMemory-60}\quad &\{60,51,43,34,26,17,9,0\},\\
+\text{STMemory-120}\quad &\{120,103,86,69,51,34,17,0\}.
+\end{align*}
+
+\section{Per-seed results and training dynamics}
+
+\begin{table}[H]
+\centering
+\caption{\textbf{OOD value prediction for each seed.}}
+\label{tab:perseed}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{2}{c}{Seed 1} & \multicolumn{2}{c}{Seed 2} & \multicolumn{2}{c}{Seed 3} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Model & MSE & Pearson & MSE & Pearson & MSE & Pearson \\
+\midrule
+\tabinput{tables/per_seed.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+Fig.~\ref{fig:train} shows training and validation curves. STMemory starts from a lower training value loss than WCM and reaches a several times lower validation value MSE within the first epochs. Latent losses are computed against each model's own encoder and are therefore compared within, not across, models.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{\figdir figA1_training_curves.pdf}
+\caption{\textbf{Training dynamics.} Seed means with seed ranges for training losses (\textbf{a},\textbf{b}) and validation errors (\textbf{c},\textbf{d}). The shaded region marks full fine-tuning.}
+\label{fig:train}
+\end{figure}
+
+\bibliographystyle{unsrtnat}
+\begingroup
+\footnotesize
+\setlength{\bibsep}{0pt}
+\bibliography{refs}
+\endgroup
+
+\end{document}

@@ -1,4 +1,10 @@
-# WCM
+# WCM / STMemory
+
+**最新实验报告：[报告入口.md](报告入口.md)**（Figure 2 模块替换消融、领域基线和原始结果位置）。整理后的报告统一在 [`reports/`](reports/README.md)。
+
+当前论文：[`paper/stmemory/`](paper/stmemory/README.md)。当前训练与评估入口：[`run_scripts/`](run_scripts/README.md)。模块消融准备：[`experiments/module_ablation/`](experiments/module_ablation/README.md)。
+
+2026-10-26 已归档旧编号 shell 脚本和旧稿，位置为 `_archive/cleanup_20261026/`。下方保留上游 WCM 说明，其中的旧编号脚本示例仅供历史参考；当前运行请使用上述新入口。
 
 ### A World Critic Model for Vision-Language-Action Reinforcement Learning
 

@@ -1,0 +1,172 @@
+{
+ "raw": [
+  {
+   "camera": "primary",
+   "slot": 0,
+   "frame": 80,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 0,
+   "frame": 80,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  },
+  {
+   "camera": "primary",
+   "slot": 1,
+   "frame": 97,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 1,
+   "frame": 97,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  },
+  {
+   "camera": "primary",
+   "slot": 2,
+   "frame": 114,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 2,
+   "frame": 114,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  },
+  {
+   "camera": "primary",
+   "slot": 3,
+   "frame": 131,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 3,
+   "frame": 131,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  },
+  {
+   "camera": "primary",
+   "slot": 4,
+   "frame": 149,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 4,
+   "frame": 149,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  },
+  {
+   "camera": "primary",
+   "slot": 5,
+   "frame": 166,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 5,
+   "frame": 166,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  },
+  {
+   "camera": "primary",
+   "slot": 6,
+   "frame": 183,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 6,
+   "frame": 183,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  },
+  {
+   "camera": "primary",
+   "slot": 7,
+   "frame": 200,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.primary\\episode_000150.mp4"
+  },
+  {
+   "camera": "wrist",
+   "slot": 7,
+   "frame": 200,
+   "source": "data_toiletButton_0814_tail77\\videos\\chunk-000\\observation.images.wrist\\episode_000150.mp4"
+  }
+ ],
+ "video": [
+  {
+   "clip": "ood_st120",
+   "index": 6,
+   "fraction": 0.03,
+   "frames": 189,
+   "source": "assets\\videos_wcm_to_spacetime\\t120\\t120_ood_s3072\\episode-000000.mp4"
+  },
+  {
+   "clip": "ood_st120",
+   "index": 47,
+   "fraction": 0.25,
+   "frames": 189,
+   "source": "assets\\videos_wcm_to_spacetime\\t120\\t120_ood_s3072\\episode-000000.mp4"
+  },
+  {
+   "clip": "ood_st120",
+   "index": 94,
+   "fraction": 0.5,
+   "frames": 189,
+   "source": "assets\\videos_wcm_to_spacetime\\t120\\t120_ood_s3072\\episode-000000.mp4"
+  },
+  {
+   "clip": "ood_st120",
+   "index": 141,
+   "fraction": 0.75,
+   "frames": 189,
+   "source": "assets\\videos_wcm_to_spacetime\\t120\\t120_ood_s3072\\episode-000000.mp4"
+  },
+  {
+   "clip": "ood_st120",
+   "index": 186,
+   "fraction": 0.99,
+   "frames": 189,
+   "source": "assets\\videos_wcm_to_spacetime\\t120\\t120_ood_s3072\\episode-000000.mp4"
+  },
+  {
+   "clip": "fail_st60",
+   "index": 6,
+   "fraction": 0.03,
+   "frames": 205,
+   "source": "assets\\videos_wcm_to_spacetime\\t8_pair\\fail_spacetime_s3072\\episode-000025.mp4"
+  },
+  {
+   "clip": "fail_st60",
+   "index": 51,
+   "fraction": 0.25,
+   "frames": 205,
+   "source": "assets\\videos_wcm_to_spacetime\\t8_pair\\fail_spacetime_s3072\\episode-000025.mp4"
+  },
+  {
+   "clip": "fail_st60",
+   "index": 102,
+   "fraction": 0.5,
+   "frames": 205,
+   "source": "assets\\videos_wcm_to_spacetime\\t8_pair\\fail_spacetime_s3072\\episode-000025.mp4"
+  },
+  {
+   "clip": "fail_st60",
+   "index": 153,
+   "fraction": 0.75,
+   "frames": 205,
+   "source": "assets\\videos_wcm_to_spacetime\\t8_pair\\fail_spacetime_s3072\\episode-000025.mp4"
+  },
+  {
+   "clip": "fail_st60",
+   "index": 202,
+   "fraction": 0.99,
+   "frames": 205,
+   "source": "assets\\videos_wcm_to_spacetime\\t8_pair\\fail_spacetime_s3072\\episode-000025.mp4"
+  }
+ ]
+}

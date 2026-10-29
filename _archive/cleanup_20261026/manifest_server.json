@@ -1,0 +1,194 @@
+[
+  {
+    "source": "3_run_eval.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/3_run_eval.sh"
+  },
+  {
+    "source": "32_run_spacetime_confirmatory.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/32_run_spacetime_confirmatory.sh"
+  },
+  {
+    "source": "10_go_home.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/10_go_home.sh"
+  },
+  {
+    "source": "8_run_expanded_training.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/8_run_expanded_training.sh"
+  },
+  {
+    "source": "33_run_eight_frame_mosaic_pair.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/33_run_eight_frame_mosaic_pair.sh"
+  },
+  {
+    "source": "28_run_spacetime_vit_pair.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/28_run_spacetime_vit_pair.sh"
+  },
+  {
+    "source": "34_render_spacetime_t120_videos.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/34_render_spacetime_t120_videos.sh"
+  },
+  {
+    "source": "29_run_spacetime_direct_pair.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/29_run_spacetime_direct_pair.sh"
+  },
+  {
+    "source": "27_run_mosaic_residual_pair.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/27_run_mosaic_residual_pair.sh"
+  },
+  {
+    "source": "30_run_spacetime_threeway.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/30_run_spacetime_threeway.sh"
+  },
+  {
+    "source": "13_eval_ood_all.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/13_eval_ood_all.sh"
+  },
+  {
+    "source": "18_cleanup_checkpoints.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/18_cleanup_checkpoints.sh"
+  },
+  {
+    "source": "9_move_outputs_to_bigdisk.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/9_move_outputs_to_bigdisk.sh"
+  },
+  {
+    "source": "21_run_sparse4_pair.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/21_run_sparse4_pair.sh"
+  },
+  {
+    "source": "31_run_spacetime_t120_pair.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/31_run_spacetime_t120_pair.sh"
+  },
+  {
+    "source": "4_gen_video.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/4_gen_video.sh"
+  },
+  {
+    "source": "11_fix_expanded_dataset.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/11_fix_expanded_dataset.sh"
+  },
+  {
+    "source": "15_diagnose_frame_counting.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/15_diagnose_frame_counting.sh"
+  },
+  {
+    "source": "22_cleanup_cross_frame_weights.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/22_cleanup_cross_frame_weights.sh"
+  },
+  {
+    "source": "6_eval_5cut.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/6_eval_5cut.sh"
+  },
+  {
+    "source": "12_fix_videos_and_retrain.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/12_fix_videos_and_retrain.sh"
+  },
+  {
+    "source": "36_run_domain_baselines.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/36_run_domain_baselines.sh"
+  },
+  {
+    "source": "7_build_expanded_dataset.sh",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/7_build_expanded_dataset.sh"
+  },
+  {
+    "source": "run_scripts/_archive",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/run_scripts/_archive"
+  },
+  {
+    "source": "scripts/_archive",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/scripts/_archive"
+  },
+  {
+    "source": "paper/main.fdb_latexmk",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.fdb_latexmk"
+  },
+  {
+    "source": "paper/main.blg",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.blg"
+  },
+  {
+    "source": "paper/main.tex",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.tex"
+  },
+  {
+    "source": "paper/main.fls",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.fls"
+  },
+  {
+    "source": "paper/refs.bib",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/refs.bib"
+  },
+  {
+    "source": "paper/main.xdv",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.xdv"
+  },
+  {
+    "source": "paper/main.log",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.log"
+  },
+  {
+    "source": "paper/main.bbl",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.bbl"
+  },
+  {
+    "source": "paper/wcm_spacetime.pdf",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/wcm_spacetime.pdf"
+  },
+  {
+    "source": "paper/main.out",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.out"
+  },
+  {
+    "source": "paper/main.pdf",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.pdf"
+  },
+  {
+    "source": "paper/main.aux",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/main.aux"
+  },
+  {
+    "source": "paper/wcm_spacetime.tex",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/paper/wcm_spacetime.tex"
+  },
+  {
+    "source": "寄存器变体实验报告.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/寄存器变体实验报告.md"
+  },
+  {
+    "source": "寄存器实验重构路线.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/寄存器实验重构路线.md"
+  },
+  {
+    "source": "空间寄存器消融实验报告.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/空间寄存器消融实验报告.md"
+  },
+  {
+    "source": "跨帧WCM离线强化学习方案.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/跨帧WCM离线强化学习方案.md"
+  },
+  {
+    "source": "pipeline_handover.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/pipeline_handover.md"
+  },
+  {
+    "source": "pistar06_vs_wcm.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/pistar06_vs_wcm.md"
+  },
+  {
+    "source": "rollout_wcm_adv_pi05.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/rollout_wcm_adv_pi05.md"
+  },
+  {
+    "source": "SpaceTime三方对照实验计划.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/SpaceTime三方对照实验计划.md"
+  },
+  {
+    "source": "Sparse4消融实验记录.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/Sparse4消融实验记录.md"
+  },
+  {
+    "source": "WCM 价值函数流水线.md",
+    "destination": "/home/user/code_1/WCM/_archive/cleanup_20261026/WCM 价值函数流水线.md"
+  }
+]

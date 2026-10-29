@@ -141,6 +141,10 @@ class ModelConfig:
     spacetime_layerscale_init: float | None = None
     spacetime_teacher_enabled: bool = False
     spacetime_temporal_enabled: bool = True
+    # Figure 2 replacements: independent-frame CLS encoder (b), or original
+    # CLS/view pooling + chronological context readout instead of queries (c).
+    spacetime_original_encoding: bool = False
+    spacetime_original_readout: bool = False
     predict_risk: bool = False
     predict_q: bool = False
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
@@ -215,6 +219,7 @@ class TrainConfig:
     log_every: int = 20
     eval_every_epochs: int = 1
     save_every_epochs: int = 1
+    checkpoint_last_only: bool = False
     resume: str | None = None
     # Warm-start：仅加载模型权重（不校验 config、不恢复 optimizer/scheduler/RNG），用于换数据集微调。
     init_from: str | None = None
@@ -597,8 +602,8 @@ def validate_train_config(config: TrainConfig) -> None:
         or config.model.latent_dim % config.model.spacetime_heads != 0
     ):
         raise ValueError("latent_dim must be divisible by positive spacetime_heads.")
-    if config.model.perceiver_queries not in (64, 128):
-        raise ValueError("perceiver_queries must be 64 or 128.")
+    if config.model.perceiver_queries not in (16, 64, 128):
+        raise ValueError("perceiver_queries must be 16, 64 or 128.")
     if config.model.perceiver_layers < 1 or config.model.perceiver_mlp_ratio <= 0:
         raise ValueError("perceiver_layers and perceiver_mlp_ratio must be positive.")
     if config.model.temporal_transformer_layers < 1:

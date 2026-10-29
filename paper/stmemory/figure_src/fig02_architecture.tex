@@ -1,0 +1,187 @@
+% STMemory architecture. Compile with xelatex from redesign_20261024/:
+%   xelatex -output-directory=figure_src figure_src/fig02_architecture.tex
+\documentclass[border=1.5pt]{standalone}
+\usepackage{fontspec}
+\setsansfont{Inter}[UprightFont=*-Regular,BoldFont=*-SemiBold]
+\newfontfamily\medium{Inter Medium}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{amsmath,amssymb}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,shadows.blur,decorations.pathreplacing}
+
+\definecolor{ink}{HTML}{1B2433}
+\definecolor{sub}{HTML}{5B6678}
+\definecolor{rule}{HTML}{CBD3DE}
+\definecolor{panel}{HTML}{F5F7FA}
+\definecolor{cyan}{HTML}{19A7CE}
+\definecolor{cobalt}{HTML}{1F4E9C}
+\definecolor{sky}{HTML}{E6F2FA}
+\definecolor{slate}{HTML}{8A96A8}
+
+\tikzset{
+  panel/.style={rounded corners=2.2mm, fill=panel, draw=rule, line width=.4pt},
+  card/.style={rounded corners=1.1mm, fill=white, draw=rule, line width=.45pt,
+    blur shadow={shadow blur steps=8, shadow xshift=.2mm, shadow yshift=-.35mm, shadow opacity=16}},
+  ptitle/.style={anchor=north west, inner sep=0pt, font=\bfseries\fontsize{7.2}{8.6}\selectfont, text=ink},
+  pletter/.style={anchor=north west, inner sep=0pt, font=\bfseries\fontsize{8}{9}\selectfont, text=ink},
+  lbl/.style={inner sep=0pt, font=\fontsize{5.7}{6.9}\selectfont, text=sub},
+  key/.style={inner sep=0pt, font=\medium\fontsize{6.2}{7.4}\selectfont, text=ink},
+  flow/.style={-{Stealth[length=1.7mm,width=1.25mm]}, line width=.65pt, draw=ink!75},
+  thin flow/.style={-{Stealth[length=1.3mm,width=1mm]}, line width=.45pt, draw=sub},
+  pill/.style={rounded corners=2.1mm, minimum height=4.6mm, minimum width=15.5mm, inner sep=0pt,
+    font=\medium\fontsize{6.2}{7}\selectfont, text=white,
+    blur shadow={shadow blur steps=6, shadow xshift=.15mm, shadow yshift=-.3mm, shadow opacity=20}},
+  frame/.style={anchor=south west, inner sep=0pt, draw=white, line width=.5pt,
+    blur shadow={shadow blur steps=5, shadow xshift=.15mm, shadow yshift=-.25mm, shadow opacity=22}},
+}
+
+\begin{document}
+\begin{tikzpicture}[x=1mm,y=1mm]
+
+% ------------------------------------------------------------------ panels
+\draw[panel] (0,0) rectangle (44,72);
+\draw[panel] (46,0) rectangle (100,72);
+\draw[panel] (102,0) rectangle (137,72);
+\draw[panel] (139,0) rectangle (180,72);
+\draw[panel] (0,-21) rectangle (180,-3);
+\node[pletter] at (2.6,69.6) {a};
+\node[ptitle] at (6.4,69.6) {Visual memory sampling};
+\node[pletter] at (48.6,69.6) {b};
+\node[ptitle] at (52.4,69.6) {Spatiotemporal encoding};
+\node[pletter] at (104.6,69.6) {c};
+\node[ptitle] at (108.4,69.6) {Query compression};
+\node[pletter] at (141.6,69.6) {d};
+\node[ptitle] at (145.4,69.6) {World model readout};
+
+% ------------------------------------------------------------------ a: camera decks, older frames recede
+\node[key, anchor=west] at (3,63.2) {Primary camera};
+\node[key, anchor=west] at (3,37.6) {Wrist camera};
+\foreach \k in {0,...,7}{
+  \pgfmathsetmacro{\x}{3+\k*2.55}
+  \pgfmathsetmacro{\yp}{47.6-\k*1.05}
+  \pgfmathsetmacro{\yw}{22.2-\k*1.05}
+  \pgfmathsetmacro{\fade}{0.62*(7-\k)/7}
+  \node[frame] at (\x,\yp) {\includegraphics[width=17mm,height=12.75mm]{assets/raw/primary_\k.png}};
+  \fill[white, opacity=\fade] (\x,\yp) rectangle ++(17,12.75);
+  \node[frame] at (\x,\yw) {\includegraphics[width=17mm,height=12.75mm]{assets/raw/wrist_\k.png}};
+  \fill[white, opacity=\fade] (\x,\yw) rectangle ++(17,12.75);
+}
+\draw[cobalt, line width=.8pt, rounded corners=.3mm] (20.85,40.25) rectangle (37.85,53.0);
+\draw[cobalt, line width=.8pt, rounded corners=.3mm] (20.85,14.85) rectangle (37.85,27.6);
+
+% time axis with sampled offsets
+\draw[rule, line width=.9pt, line cap=round] (4.5,7.6) -- (39.5,7.6);
+\foreach \k in {0,...,6}{
+  \pgfmathsetmacro{\x}{4.5+\k*35/7}
+  \fill[cyan] (\x,7.6) circle (.75mm);
+}
+\fill[cobalt] (39.5,7.6) circle (1mm);
+\node[lbl, anchor=north] at (4.5,5.6) {$t-k$};
+\node[lbl, anchor=north] at (39.5,5.6) {$t$};
+\node[lbl, anchor=north] at (22,5.6) {$T$ sampled time steps};
+
+% ------------------------------------------------------------------ b: shared ViT
+\shade[left color=sky, right color=cobalt!28, draw=cobalt!55, line width=.5pt, rounded corners=.8mm]
+  (49,17) -- (60.5,25) -- (60.5,47) -- (49,55) -- cycle;
+\node[key, rotate=90, text=cobalt] at (54.2,38.5) {Shared ViT};
+\node[lbl, rotate=90] at (57.6,36) {per view encoder $\phi$};
+\draw[flow] (38.6,47.2) to[out=0,in=180] (48.6,44);
+\draw[flow] (38.6,21.8) to[out=0,in=180] (48.6,28);
+
+% token stack: one sheet per time step, cells are patch tokens
+\foreach \i in {0,...,7}{
+  \pgfmathsetmacro{\x}{65+\i*3.35}
+  \filldraw[fill=white, draw=rule, line width=.4pt]
+    (\x,20) -- ++(6,4) -- ++(0,24) -- ++(-6,-4) -- cycle;
+  \foreach \r in {0,...,5}{
+    \foreach \c in {0,1,2}{
+      \pgfmathtruncatemacro{\shade}{12+mod(7*\i+5*\r+3*\c,6)*9}
+      \fill[cobalt!\shade, draw=white, line width=.25pt]
+        ($(\x,20)+(\c*2,\c*1.3333)+(0,\r*4)$) -- ++(2,1.3333) -- ++(0,4) -- ++(-2,-1.3333) -- cycle;
+    }
+  }
+  \fill[cyan, draw=white, line width=.3pt]
+    ($(\x,20)+(0,12)$) -- ++(2,1.3333) -- ++(0,4) -- ++(-2,-1.3333) -- cycle;
+}
+\draw[cyan!70!ink, line width=.6pt, dash pattern=on 1pt off .8pt] (66,34.67) -- (89.45,34.67);
+\foreach \i in {0,...,7}{\fill[white] (66+\i*3.35,34.67) circle (.38mm);}
+\draw[thin flow] (60.9,36) -- (64.4,36);
+\draw[decorate, decoration={brace, amplitude=1.2mm}, sub, line width=.4pt] (65,50.8) -- (95.5,50.8);
+\node[key, anchor=south] at (80.2,57.0) {Factorized temporal attention};
+\node[lbl, anchor=south] at (80.2,53.3) {each patch attends across the sampled times};
+\draw[sub, line width=.4pt, -{Stealth[length=1.3mm]}] (65,16.5) -- (95.5,16.5);
+\node[lbl, anchor=north] at (80.2,15.3) {time slots, older to current};
+\node[lbl, anchor=north] at (80.2,11.2) {camera and time embeddings added};
+\node[lbl, anchor=south west] at (93.6,48.6) {$S_t$};
+
+% ------------------------------------------------------------------ c: query compression
+\foreach \q in {0,...,7}{
+  \pgfmathsetmacro{\y}{24.5+\q*3.35}
+  \foreach \s in {25,31,37,43,49}{
+    \draw[cyan, opacity=.28, line width=.3pt] (95.8,\s-2.5) -- (109.6,\y+1.2);
+  }
+}
+\foreach \q in {0,...,7}{
+  \pgfmathsetmacro{\y}{24.5+\q*3.35}
+  \pgfmathtruncatemacro{\mix}{30+\q*9}
+  \filldraw[fill=cyan!\mix!cobalt, draw=white, line width=.3pt, rounded corners=.45mm]
+    (109.6,\y) rectangle ++(2.6,2.4);
+}
+\node[lbl, anchor=south] at (110.9,54.6) {learned};
+\node[lbl, anchor=south] at (110.9,52.1) {queries};
+\draw[flow] (113.2,37.7) -- (118.6,37.7);
+\foreach \r in {0,...,7}{
+  \foreach \c in {0,...,4}{
+    \pgfmathtruncatemacro{\shade}{35+mod(3*\r+7*\c,5)*13}
+    \fill[cobalt!\shade, draw=white, line width=.3pt] (119.4+\c*2.6,24.5+\r*3.35) rectangle ++(2.6,3.35);
+  }
+}
+\draw[cobalt, line width=.6pt, rounded corners=.6mm] (119.4,24.5) rectangle (132.4,51.3);
+\node[key, anchor=south, text=cobalt] at (125.9,52.4) {$\mathcal{M}_t$};
+\node[lbl, anchor=north, align=center] at (119.5,21.6) {cross attention into a\\fixed set of $R$ tokens};
+\node[lbl, anchor=north, align=center] at (119.5,13.4) {size independent of\\the memory span};
+
+% ------------------------------------------------------------------ d: readout
+\node[card, minimum width=15mm, minimum height=21mm] (ctx) at (149.2,38.2) {};
+\shade[top color=sky, bottom color=white, rounded corners=1.1mm]
+  ($(ctx.south west)+(.25,.25)$) rectangle ($(ctx.north east)-(.25,.25)$);
+\node[key, align=center, text=cobalt] at (149.2,41.2) {Context\\encoder};
+\node[lbl] at (149.2,33.6) {$C_\theta$};
+\draw[flow] (132.9,37.9) -- (141.4,37.9);
+\node[card, minimum width=17mm, minimum height=8mm] (txt) at (149.2,58.6) {};
+\node[key] at (149.2,60.0) {Instruction $\ell$};
+\node[lbl] at (149.2,56.6) {frozen CLIP text};
+\draw[thin flow] (149.2,54.4) -- (149.2,49.0);
+\node[pill, fill=cobalt] (v) at (168.6,50.6) {Value $V$};
+\node[pill, fill=slate] (q) at (168.6,42.6) {Q value};
+\node[pill, fill=cyan] (dz) at (168.6,34.6) {Dynamics};
+\foreach \h in {v,q,dz}{\draw[thin flow] (156.8,38.2) to[out=0,in=180] (\h.west);}
+\node[card, minimum width=13mm, minimum height=4.4mm] (act) at (168.6,25.8) {};
+\node[key] at (168.6,25.8) {Action $a_t$};
+\draw[thin flow] (act.north) -- (dz.south);
+\draw[thin flow, rounded corners=1mm] (act.east) -| (178.2,42.6) -- (q.east);
+% value sparkline (schematic)
+\draw[rule, line width=.4pt] (143,5.2) -- (178,5.2);
+\draw[cobalt, line width=.9pt, line cap=round]
+  plot[smooth, tension=.6] coordinates {(143,6.4) (148,6.9) (154,7.9) (160,9.8) (166,12.6) (172,15.2) (177,16.3)};
+\fill[cobalt] (177,16.3) circle (.65mm);
+\node[lbl, anchor=west] at (143,18.4) {predicted value over an episode};
+
+% ------------------------------------------------------------------ e: memory span
+\node[pletter] at (2.6,-5.2) {e};
+\node[ptitle] at (6.4,-5.2) {Memory span at fixed cost};
+\node[lbl, anchor=west, align=left] at (6.4,-14.6) {same number of observations\\and memory queries};
+\draw[rule, line width=.8pt, line cap=round] (56,-10.6) -- (176,-10.6);
+\draw[rule, line width=.8pt, line cap=round] (56,-17.0) -- (176,-17.0);
+\node[key, anchor=east, text=cyan!80!ink] at (53.5,-10.6) {Span 60};
+\node[key, anchor=east, text=cobalt] at (53.5,-17.0) {Span 120};
+\draw[cyan, line width=1.6pt, opacity=.35, line cap=round] (116,-10.6) -- (176,-10.6);
+\draw[cobalt, line width=1.6pt, opacity=.3, line cap=round] (56,-17.0) -- (176,-17.0);
+\foreach \o in {0,9,17,26,34,43,51,60}{\fill[cyan] ({176-\o}, -10.6) circle (.8mm);}
+\foreach \o in {0,17,34,51,69,86,103,120}{\fill[cobalt] ({176-\o}, -17.0) circle (.8mm);}
+\node[lbl, anchor=south] at (176,-8.6) {$t$};
+\node[lbl, anchor=south] at (116,-8.6) {$t-60$};
+\node[lbl, anchor=north] at (56,-18.8) {$t-120$};
+\node[lbl, anchor=north] at (176,-18.8) {$t$};
+\end{tikzpicture}
+\end{document}

@@ -1,0 +1,53 @@
+ .../ood_mosaic4_s3072_vs_mosaic8_s3072.json               |  49 [32m+++++++++++++[m
+ .../ood_mosaic4_s42_vs_mosaic8_s42.json                   |  49 [32m+++++++++++++[m
+ .../ood_mosaic8_s3072_vs_mosaic4_s3072.json               |  49 [32m+++++++++++++[m
+ .../ood_mosaic8_s3072_vs_spacetime_t8_s3072.json          |  49 [32m+++++++++++++[m
+ .../ood_mosaic8_s42_vs_mosaic4_s42.json                   |  49 [32m+++++++++++++[m
+ .../ood_mosaic8_s42_vs_spacetime_t8_s42.json              |  49 [32m+++++++++++++[m
+ .../ood_spacetime_t8_s3072_vs_mosaic8_s3072.json          |  49 [32m+++++++++++++[m
+ .../ood_spacetime_t8_s42_vs_mosaic8_s42.json              |  49 [32m+++++++++++++[m
+ .../temporal_span/ood_t120_vs_mosaic_s3072.json           |  49 [32m+++++++++++++[m
+ .../temporal_span/ood_t120_vs_mosaic_s42.json             |  49 [32m+++++++++++++[m
+ .../temporal_span/ood_t120_vs_t60_s3072.json              |  49 [32m+++++++++++++[m
+ .../temporal_span/ood_t120_vs_t60_s42.json                |  49 [32m+++++++++++++[m
+ .../t120/t120_5cut_s3072/episode-000000-alignment.json    |  34 [32m+++++++++[m
+ .../t120/t120_5cut_s3072/episode-000000-preview.jpg       | Bin [31m0[m -> [32m47669[m bytes
+ .../t120/t120_5cut_s3072/episode-000000.mp4               |   3 [32m+[m
+ .../t120/t120_5cut_s3072/episode-000001-alignment.json    |  34 [32m+++++++++[m
+ .../t120/t120_5cut_s3072/episode-000001-preview.jpg       | Bin [31m0[m -> [32m46378[m bytes
+ .../t120/t120_5cut_s3072/episode-000001.mp4               |   3 [32m+[m
+ .../t120/t120_5cut_s3072/episode-000057-alignment.json    |  34 [32m+++++++++[m
+ .../t120/t120_5cut_s3072/episode-000057-preview.jpg       | Bin [31m0[m -> [32m49380[m bytes
+ .../t120/t120_5cut_s3072/episode-000057.mp4               |   3 [32m+[m
+ .../t120/t120_5cut_s3072/episode_value_videos.json        |  93 [32m++++++++++++++++++++++++[m
+ .../t120/t120_5cut_s42/episode-000000-alignment.json      |  34 [32m+++++++++[m
+ .../t120/t120_5cut_s42/episode-000000-preview.jpg         | Bin [31m0[m -> [32m47555[m bytes
+ .../t120/t120_5cut_s42/episode-000000.mp4                 |   3 [32m+[m
+ .../t120/t120_5cut_s42/episode-000001-alignment.json      |  34 [32m+++++++++[m
+ .../t120/t120_5cut_s42/episode-000001-preview.jpg         | Bin [31m0[m -> [32m46509[m bytes
+ .../t120/t120_5cut_s42/episode-000001.mp4                 |   3 [32m+[m
+ .../t120/t120_5cut_s42/episode-000057-alignment.json      |  34 [32m+++++++++[m
+ .../t120/t120_5cut_s42/episode-000057-preview.jpg         | Bin [31m0[m -> [32m49150[m bytes
+ .../t120/t120_5cut_s42/episode-000057.mp4                 |   3 [32m+[m
+ .../t120/t120_5cut_s42/episode_value_videos.json          |  93 [32m++++++++++++++++++++++++[m
+ .../t120/t120_ood_s3072/episode-000000-alignment.json     |  34 [32m+++++++++[m
+ .../t120/t120_ood_s3072/episode-000000-preview.jpg        | Bin [31m0[m -> [32m45841[m bytes
+ .../t120/t120_ood_s3072/episode-000000.mp4                |   3 [32m+[m
+ .../t120/t120_ood_s3072/episode-000001-alignment.json     |  34 [32m+++++++++[m
+ .../t120/t120_ood_s3072/episode-000001-preview.jpg        | Bin [31m0[m -> [32m46899[m bytes
+ .../t120/t120_ood_s3072/episode-000001.mp4                |   3 [32m+[m
+ .../t120/t120_ood_s3072/episode-000057-alignment.json     |  34 [32m+++++++++[m
+ .../t120/t120_ood_s3072/episode-000057-preview.jpg        | Bin [31m0[m -> [32m45310[m bytes
+ .../t120/t120_ood_s3072/episode-000057.mp4                |   3 [32m+[m
+ .../t120/t120_ood_s3072/episode_value_videos.json         |  93 [32m++++++++++++++++++++++++[m
+ .../t120/t120_ood_s42/episode-000000-alignment.json       |  34 [32m+++++++++[m
+ .../t120/t120_ood_s42/episode-000000-preview.jpg          | Bin [31m0[m -> [32m45835[m bytes
+ .../t120/t120_ood_s42/episode-000000.mp4                  |   3 [32m+[m
+ .../t120/t120_ood_s42/episode-000001-alignment.json       |  34 [32m+++++++++[m
+ .../t120/t120_ood_s42/episode-000001-preview.jpg          | Bin [31m0[m -> [32m47044[m bytes
+ .../t120/t120_ood_s42/episode-000001.mp4                  |   3 [32m+[m
+ .../t120/t120_ood_s42/episode-000057-alignment.json       |  34 [32m+++++++++[m
+ .../t120/t120_ood_s42/episode-000057-preview.jpg          | Bin [31m0[m -> [32m45422[m bytes
+ .../t120/t120_ood_s42/episode-000057.mp4                  |   3 [32m+[m
+ .../t120/t120_ood_s42/episode_value_videos.json           |  93 [32m++++++++++++++++++++++++[m
+ 52 files changed, 1404 insertions(+)

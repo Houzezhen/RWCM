@@ -1,0 +1,62 @@
+[
+  {
+    "source": "outputs\\module_replacement_20261027\\模块替换消融报告.md",
+    "report_copy": "reports\\01_模块替换消融_20261027\\模块替换消融报告.md"
+  },
+  {
+    "source": "outputs\\module_replacement_20261027\\comparison.csv",
+    "report_copy": "reports\\01_模块替换消融_20261027\\comparison.csv"
+  },
+  {
+    "source": "outputs\\module_replacement_20261027\\replace_a_sampling_vs_full.json",
+    "report_copy": "reports\\01_模块替换消融_20261027\\replace_a_sampling_vs_full.json"
+  },
+  {
+    "source": "outputs\\module_replacement_20261027\\replace_b_encoding_vs_full.json",
+    "report_copy": "reports\\01_模块替换消融_20261027\\replace_b_encoding_vs_full.json"
+  },
+  {
+    "source": "outputs\\module_replacement_20261027\\replace_c_readout_vs_full.json",
+    "report_copy": "reports\\01_模块替换消融_20261027\\replace_c_readout_vs_full.json"
+  },
+  {
+    "source": "outputs\\domain_baselines_20261022\\report\\领域基线简测对比报告.md",
+    "report_copy": "reports\\02_领域基线对比_20261022\\领域基线简测对比报告.md"
+  },
+  {
+    "source": "outputs\\domain_baselines_20261022\\report\\comparison.csv",
+    "report_copy": "reports\\02_领域基线对比_20261022\\comparison.csv"
+  },
+  {
+    "source": "outputs\\domain_baselines_20261022\\report\\ours_vs_original_wcm_s42.json",
+    "report_copy": "reports\\02_领域基线对比_20261022\\ours_vs_original_wcm_s42.json"
+  },
+  {
+    "source": "outputs\\domain_baselines_20261022\\report\\ours_vs_vip_s42.json",
+    "report_copy": "reports\\02_领域基线对比_20261022\\ours_vs_vip_s42.json"
+  },
+  {
+    "source": "outputs\\domain_baselines_20261022\\report\\ours_vs_iql_s42.json",
+    "report_copy": "reports\\02_领域基线对比_20261022\\ours_vs_iql_s42.json"
+  },
+  {
+    "source": "outputs\\module_ablation_20261026\\消融结果报告.md",
+    "report_copy": "reports\\历史探索\\参数探索_20261027\\消融结果报告.md"
+  },
+  {
+    "source": "outputs\\module_ablation_20261026\\comparison.csv",
+    "report_copy": "reports\\历史探索\\参数探索_20261027\\comparison.csv"
+  },
+  {
+    "source": "outputs\\module_ablation_20261026\\no_temporal_vs_full_s42.json",
+    "report_copy": "reports\\历史探索\\参数探索_20261027\\no_temporal_vs_full_s42.json"
+  },
+  {
+    "source": "outputs\\module_ablation_20261026\\queries128_vs_full_s42.json",
+    "report_copy": "reports\\历史探索\\参数探索_20261027\\queries128_vs_full_s42.json"
+  },
+  {
+    "source": "outputs\\module_ablation_20261026\\four_frames_vs_full_s42.json",
+    "report_copy": "reports\\历史探索\\参数探索_20261027\\four_frames_vs_full_s42.json"
+  }
+]
