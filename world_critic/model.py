@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from .config import ModelConfig
+from .video_frontend import VideoFrontendEncoder
 
 
 @dataclass
@@ -1526,6 +1527,13 @@ class WorldCriticModel(nn.Module):
         self.spacetime_encoder = (
             SpaceTimePerceiverEncoder(config) if config.use_spacetime_perceiver else None
         )
+        # Frozen pretrained video front-end (V-JEPA 2 / VideoMAE) replacing
+        # the trainable ViT as the history token source. The SpaceTime
+        # reducer, value heads, and the trainable ViT next-state targets all
+        # run unchanged on top of its projected tokens.
+        self.video_frontend = (
+            VideoFrontendEncoder(config) if config.video_frontend is not None else None
+        )
         self.risk_head = (
             MLP(config.latent_dim, config.value_hidden_dim, 1, config.dropout)
             if config.predict_risk
@@ -1628,7 +1636,7 @@ class WorldCriticModel(nn.Module):
                 f"valid_mask and actions must be on the same device: {valid_mask.device} != {actions.device}."
             )
 
-        if self.spacetime_encoder is not None:
+        if self.spacetime_encoder is not None or self.video_frontend is not None:
             if history_images is None:
                 raise ValueError("SpaceTime Perceiver requires history_images.")
             if history_images.ndim != 6:
@@ -1639,16 +1647,29 @@ class WorldCriticModel(nn.Module):
                 raise ValueError("history_images and images must have the same batch size.")
             if history_images.device != images.device:
                 raise ValueError("history_images and images must be on the same device.")
-            if self.config.spacetime_original_encoding:
+            if self.video_frontend is not None:
+                history_tokens = self.video_frontend.encode_tokens(history_images)
+            elif self.config.spacetime_original_encoding:
                 # Original WCM per-frame CLS + camera embedding; no patch grid
                 # or new temporal layers. The reducer retains time-slot embeddings.
                 history_tokens = self.vision_encoder(history_images).unsqueeze(3)
             else:
                 history_tokens = self.vision_encoder.encode_tokens(history_images)
-            student_visual_tokens, student_current = self.spacetime_encoder(
-                history_tokens, view_pool=self.pool_views
-            )
-            gate = float(self.spacetime_encoder.blend_gate)
+            student_visual_tokens, student_current = (None, None)
+            if self.spacetime_encoder is not None:
+                student_visual_tokens, student_current = self.spacetime_encoder(
+                    history_tokens, view_pool=self.pool_views
+                )
+                gate = float(self.spacetime_encoder.blend_gate)
+            else:
+                # Front-end without the SpaceTime reducer: the video model's own
+                # temporal aggregation collapses the history to a current state
+                # (last tubelet), mirroring the cross-frame fusion conditions.
+                gate = 1.0
+                current_views = history_tokens[:, -1].mean(dim=2)
+                views = current_views.size(1)
+                current_views = current_views + self.vision_encoder.camera_embedding[:, 0, :views]
+                current_state = self.pool_views(current_views.unsqueeze(1))
             if self.config.spacetime_teacher_enabled:
                 if teacher_current_state is None:
                     if gate != 1.0:
@@ -1685,8 +1706,13 @@ class WorldCriticModel(nn.Module):
                     )
                 teacher_current = None
                 alignment_teacher = None
+                if student_current is None:
+                    # Front-end-only condition already pooled the current state.
+                    pass
+                else:
+                    current_state = student_current
                 next_state = self.pool_views(self.vision_encoder(images[:, 1:]))
-                state_latents = torch.cat([student_current, next_state], dim=1)
+                state_latents = torch.cat([current_state, next_state], dim=1)
         elif (
             self.cross_frame_encoder is not None
             or self.temporal_adapter is not None
@@ -1774,6 +1800,8 @@ class WorldCriticModel(nn.Module):
                 student_visual_tokens, text_tokens, text_mask, history_mask
             )[:, -1:]
         elif self.spacetime_encoder is None:
+            # Baseline WCM, cross-frame variants, and the front-end-only
+            # condition all read the pooled state history.
             context = self.encode_context(
                 state_latents[:, :-1], text_tokens, text_mask, valid_mask
             )
@@ -1882,6 +1910,11 @@ class WorldCriticModel(nn.Module):
         if self.cross_frame_encoder is not None:
             raise NotImplementedError(
                 "rollout_latent requires explicit sparse history images for cross-frame fusion."
+            )
+        if self.video_frontend is not None or self.spacetime_encoder is not None:
+            raise NotImplementedError(
+                "rollout_latent is not wired for video front-ends or the SpaceTime reducer; "
+                "use forward() with history_images."
             )
         if observation_images.ndim == 5:
             observation_images = observation_images.unsqueeze(2)

@@ -1,0 +1,6 @@
+*.mp4
+*.npz
+lerobot/
+trim_sample/
+samples_v*/
+noise_example_*.png

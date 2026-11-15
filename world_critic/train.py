@@ -448,6 +448,7 @@ def run() -> None:
                         "sparse_memory_encoder.",
                         "mosaic_temporal_residual.",
                         "spacetime_encoder.",
+                        "video_frontend.",
                         "risk_head.",
                         "q_action_encoder.",
                         "q_head.",

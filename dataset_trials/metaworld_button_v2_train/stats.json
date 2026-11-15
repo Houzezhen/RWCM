@@ -1,0 +1,902 @@
+[
+  {
+    "episode": 0,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09713858743917739
+  },
+  {
+    "episode": 1,
+    "mode": "stop",
+    "success": false,
+    "task_len": 60,
+    "total": 156,
+    "dev_step": 26,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 2,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09709584925976232
+  },
+  {
+    "episode": 3,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 60,
+    "total": 128,
+    "dev_step": 25,
+    "max_btn_move": 0.009181576947106555
+  },
+  {
+    "episode": 4,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 136,
+    "dev_step": null,
+    "max_btn_move": 0.09753971649383719
+  },
+  {
+    "episode": 5,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 63,
+    "total": 159,
+    "dev_step": 26,
+    "max_btn_move": 0.0004072565189417373
+  },
+  {
+    "episode": 6,
+    "mode": "over",
+    "success": false,
+    "task_len": 69,
+    "total": 126,
+    "dev_step": 28,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 7,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 70,
+    "total": 98,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 8,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": null,
+    "max_btn_move": 0.09650213412470679
+  },
+  {
+    "episode": 9,
+    "mode": "stop",
+    "success": false,
+    "task_len": 70,
+    "total": 128,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 10,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09738778140960555
+  },
+  {
+    "episode": 11,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 57,
+    "total": 124,
+    "dev_step": 24,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 12,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": null,
+    "max_btn_move": 0.09688525261396137
+  },
+  {
+    "episode": 13,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 69,
+    "total": 141,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 14,
+    "mode": "over",
+    "success": false,
+    "task_len": 59,
+    "total": 116,
+    "dev_step": 29,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 15,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 61,
+    "total": 95,
+    "dev_step": 30,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 16,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.09692848178498945
+  },
+  {
+    "episode": 17,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09621610364793037
+  },
+  {
+    "episode": 18,
+    "mode": "stop",
+    "success": false,
+    "task_len": 55,
+    "total": 113,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 19,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 61,
+    "total": 129,
+    "dev_step": 28,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 20,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 67,
+    "total": 138,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 21,
+    "mode": "over",
+    "success": false,
+    "task_len": 65,
+    "total": 120,
+    "dev_step": 24,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 22,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": null,
+    "max_btn_move": 0.09754959204116133
+  },
+  {
+    "episode": 23,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 55,
+    "total": 151,
+    "dev_step": 30,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 24,
+    "mode": "stop",
+    "success": false,
+    "task_len": 57,
+    "total": 153,
+    "dev_step": 30,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 25,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 64,
+    "total": 136,
+    "dev_step": 29,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 26,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.09717987003666824
+  },
+  {
+    "episode": 27,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 137,
+    "dev_step": null,
+    "max_btn_move": 0.0977236078660229
+  },
+  {
+    "episode": 28,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 57,
+    "total": 153,
+    "dev_step": 28,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 29,
+    "mode": "over",
+    "success": false,
+    "task_len": 64,
+    "total": 160,
+    "dev_step": 24,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 30,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 64,
+    "total": 160,
+    "dev_step": 28,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 31,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09677074769461906
+  },
+  {
+    "episode": 32,
+    "mode": "stop",
+    "success": false,
+    "task_len": 64,
+    "total": 160,
+    "dev_step": 26,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 33,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 56,
+    "total": 120,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 34,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 55,
+    "total": 151,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 35,
+    "mode": "over",
+    "success": false,
+    "task_len": 67,
+    "total": 124,
+    "dev_step": 26,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 36,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 61,
+    "total": 89,
+    "dev_step": 24,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 37,
+    "mode": "stop",
+    "success": false,
+    "task_len": 65,
+    "total": 122,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 38,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09675407001464796
+  },
+  {
+    "episode": 39,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 56,
+    "total": 121,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 40,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09663579422769202
+  },
+  {
+    "episode": 41,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09703624646715861
+  },
+  {
+    "episode": 42,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09713454816062496
+  },
+  {
+    "episode": 43,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 140,
+    "dev_step": null,
+    "max_btn_move": 0.09741981674763638
+  },
+  {
+    "episode": 44,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 61,
+    "total": 157,
+    "dev_step": 29,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 45,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 136,
+    "dev_step": null,
+    "max_btn_move": 0.09758826625893167
+  },
+  {
+    "episode": 46,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 141,
+    "dev_step": null,
+    "max_btn_move": 0.09632618174464848
+  },
+  {
+    "episode": 47,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09686006659915757
+  },
+  {
+    "episode": 48,
+    "mode": "over",
+    "success": false,
+    "task_len": 61,
+    "total": 112,
+    "dev_step": 30,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 49,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 63,
+    "total": 91,
+    "dev_step": 30,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 50,
+    "mode": "stop",
+    "success": false,
+    "task_len": 67,
+    "total": 124,
+    "dev_step": 26,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 51,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.0972782376670519
+  },
+  {
+    "episode": 52,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 67,
+    "total": 163,
+    "dev_step": 30,
+    "max_btn_move": 0.01877223675575447
+  },
+  {
+    "episode": 53,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": null,
+    "max_btn_move": 0.09747292442056005
+  },
+  {
+    "episode": 54,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 140,
+    "dev_step": null,
+    "max_btn_move": 0.09678260214989752
+  },
+  {
+    "episode": 55,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": 26,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 56,
+    "mode": "over",
+    "success": false,
+    "task_len": 64,
+    "total": 118,
+    "dev_step": 28,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 57,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 136,
+    "dev_step": null,
+    "max_btn_move": 0.09758854973700196
+  },
+  {
+    "episode": 58,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 59,
+    "total": 87,
+    "dev_step": 29,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 59,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.0968657288880033
+  },
+  {
+    "episode": 60,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09734221392125957
+  },
+  {
+    "episode": 61,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09666899016060548
+  },
+  {
+    "episode": 62,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.09680409315570783
+  },
+  {
+    "episode": 63,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": null,
+    "max_btn_move": 0.09750559886312235
+  },
+  {
+    "episode": 64,
+    "mode": "stop",
+    "success": false,
+    "task_len": 63,
+    "total": 122,
+    "dev_step": 25,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 65,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 61,
+    "total": 157,
+    "dev_step": 24,
+    "max_btn_move": 0.019298947295835093
+  },
+  {
+    "episode": 66,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 55,
+    "total": 119,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 67,
+    "mode": "over",
+    "success": false,
+    "task_len": 61,
+    "total": 157,
+    "dev_step": 28,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 68,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.09733319484366465
+  },
+  {
+    "episode": 69,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.0974043375494951
+  },
+  {
+    "episode": 70,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09675269674168709
+  },
+  {
+    "episode": 71,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.09708766477746336
+  },
+  {
+    "episode": 72,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 57,
+    "total": 153,
+    "dev_step": 24,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 73,
+    "mode": "stop",
+    "success": false,
+    "task_len": 66,
+    "total": 124,
+    "dev_step": 29,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 74,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": 28,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 75,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09683956027149954
+  },
+  {
+    "episode": 76,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 61,
+    "total": 130,
+    "dev_step": 28,
+    "max_btn_move": 0.007683057973222022
+  },
+  {
+    "episode": 77,
+    "mode": "over",
+    "success": false,
+    "task_len": 55,
+    "total": 123,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 78,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 66,
+    "total": 94,
+    "dev_step": 25,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 79,
+    "mode": "stop",
+    "success": false,
+    "task_len": 69,
+    "total": 128,
+    "dev_step": 30,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 80,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.09717799426094152
+  },
+  {
+    "episode": 81,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09704938405091389
+  },
+  {
+    "episode": 82,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.0968803397417975
+  },
+  {
+    "episode": 83,
+    "mode": "side_l",
+    "success": false,
+    "task_len": 57,
+    "total": 122,
+    "dev_step": 29,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 84,
+    "mode": "side_r",
+    "success": false,
+    "task_len": 61,
+    "total": 157,
+    "dev_step": 27,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 85,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09691133986802812
+  },
+  {
+    "episode": 86,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.09688551350504111
+  },
+  {
+    "episode": 87,
+    "mode": "over",
+    "success": false,
+    "task_len": 64,
+    "total": 160,
+    "dev_step": 29,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 88,
+    "mode": "retreat",
+    "success": false,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": 30,
+    "max_btn_move": 0.0
+  },
+  {
+    "episode": 89,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09755097135306202
+  },
+  {
+    "episode": 90,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 155,
+    "dev_step": null,
+    "max_btn_move": 0.09705148857756092
+  },
+  {
+    "episode": 91,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 139,
+    "dev_step": null,
+    "max_btn_move": 0.0968580955359287
+  },
+  {
+    "episode": 92,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": null,
+    "max_btn_move": 0.09761568570607711
+  },
+  {
+    "episode": 93,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09747625586339945
+  },
+  {
+    "episode": 94,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 137,
+    "dev_step": null,
+    "max_btn_move": 0.09745157865902594
+  },
+  {
+    "episode": 95,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 137,
+    "dev_step": null,
+    "max_btn_move": 0.09766619879601869
+  },
+  {
+    "episode": 96,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09763453981065412
+  },
+  {
+    "episode": 97,
+    "mode": "clean",
+    "success": true,
+    "task_len": 58,
+    "total": 154,
+    "dev_step": null,
+    "max_btn_move": 0.09685973539929235
+  },
+  {
+    "episode": 98,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09703957501825189
+  },
+  {
+    "episode": 99,
+    "mode": "clean",
+    "success": true,
+    "task_len": 59,
+    "total": 138,
+    "dev_step": null,
+    "max_btn_move": 0.09689047242699603
+  }
+]

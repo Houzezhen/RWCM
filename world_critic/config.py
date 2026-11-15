@@ -145,6 +145,12 @@ class ModelConfig:
     # CLS/view pooling + chronological context readout instead of queries (c).
     spacetime_original_encoding: bool = False
     spacetime_original_readout: bool = False
+    # Frozen pretrained video front-end replacing the trainable ViT history
+    # encoder ("vjepa2" predictive world model | "videomae" reconstructive
+    # control). Projects per-tubelet patch tokens into the critic latent dim;
+    # the SpaceTime reducer and value heads run unchanged on top.
+    video_frontend: str | None = None
+    frontend_model_name: str | None = None
     predict_risk: bool = False
     predict_q: bool = False
     # temporal register token：跨时间步共享的 K_t 个可学习 token（latent 空间），
@@ -566,6 +572,28 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError("loss.risk_weight>0 requires model.predict_risk=true.")
         if config.loss.q_weight > 0 and not config.model.predict_q:
             raise ValueError("loss.q_weight>0 requires model.predict_q=true.")
+    if config.model.video_frontend is not None:
+        if config.model.video_frontend not in {"vjepa2", "videomae", "levjepa", "vjepa21"}:
+            raise ValueError(
+                "video_frontend must be 'vjepa2', 'videomae', 'levjepa', 'vjepa21', or null; "
+                f"got {config.model.video_frontend!r}."
+            )
+        if not config.data.history_frames or config.data.history_offsets is None:
+            raise ValueError("video_frontend requires data.history_frames and history_offsets.")
+        if len(config.data.history_offsets) % 2 != 0:
+            raise ValueError(
+                "video_frontend tubelet size 2 requires an even number of history_offsets."
+            )
+        if config.model.spacetime_frame_count != len(config.data.history_offsets):
+            raise ValueError(
+                "spacetime_frame_count must match the number of history_offsets."
+            )
+        if config.model.spacetime_teacher_enabled:
+            raise ValueError(
+                "video_frontend is teacher-free; spacetime_teacher_enabled must be false."
+            )
+        if config.model.spacetime_original_encoding:
+            raise ValueError("video_frontend is incompatible with spacetime_original_encoding.")
     if config.model.cross_frame_count < 1 or config.model.cross_frame_layers < 1:
         raise ValueError("cross_frame_count and cross_frame_layers must be positive.")
     if config.data.history_size > config.model.max_history:
