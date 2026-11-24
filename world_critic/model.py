@@ -856,6 +856,13 @@ class SpaceTimePerceiverEncoder(nn.Module):
         self.temporal_enabled = config.spacetime_temporal_enabled
         self.original_encoding = config.spacetime_original_encoding
         self.original_readout = config.spacetime_original_readout
+        # 基础模块消融: mean=时间均值池化 / last=只取当前帧(默认 attention 走时序层)
+        self.temporal_mode = config.spacetime_temporal_mode
+        self.readout_mode = config.spacetime_readout_mode
+        use_temporal_layers = (
+            not self.original_encoding and self.temporal_mode == "attention"
+        )
+        use_perceiver = not self.original_readout and self.readout_mode == "perceiver"
         self.time_embedding = nn.Parameter(
             torch.zeros(1, self.max_frame_count, 1, 1, dim)
         )
@@ -870,28 +877,28 @@ class SpaceTimePerceiverEncoder(nn.Module):
                 norm_first=True,
                 batch_first=True,
             )
-            for _ in range(0 if self.original_encoding else config.spacetime_layers)
+            for _ in range(0 if not use_temporal_layers else config.spacetime_layers)
         )
         self.temporal_layer_scales = (
             nn.ParameterList(
                 nn.Parameter(torch.full((dim,), config.spacetime_layerscale_init))
-                for _ in range(0 if self.original_encoding else config.spacetime_layers)
+                for _ in range(0 if not use_temporal_layers else config.spacetime_layers)
             )
             if config.spacetime_layerscale_init is not None
             else None
         )
         self.temporal_norm = nn.LayerNorm(dim)
-        self.perceiver_queries = None if self.original_readout else nn.Parameter(
+        self.perceiver_queries = None if not use_perceiver else nn.Parameter(
             torch.zeros(1, config.perceiver_queries, dim)
         )
         self.perceiver_layers = nn.ModuleList(
             _PerceiverReducerLayer(dim, config.spacetime_heads, config.perceiver_mlp_ratio)
-            for _ in range(0 if self.original_readout else config.perceiver_layers)
+            for _ in range(0 if not use_perceiver else config.perceiver_layers)
         )
         self.perceiver_layer_scales = (
             nn.ParameterList(
                 nn.Parameter(torch.full((dim,), config.spacetime_layerscale_init))
-                for _ in range(0 if self.original_readout else config.perceiver_layers)
+                for _ in range(0 if not use_perceiver else config.perceiver_layers)
             )
             if config.spacetime_layerscale_init is not None
             else None
@@ -899,7 +906,7 @@ class SpaceTimePerceiverEncoder(nn.Module):
         self.output_projection = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim))
         self.register_buffer("blend_gate", torch.tensor(0.0), persistent=True)
         nn.init.normal_(self.time_embedding, std=0.02)
-        if not self.original_readout:
+        if self.perceiver_queries is not None:
             nn.init.normal_(self.perceiver_queries, std=0.02)
 
     def set_gate(self, value: float) -> None:
@@ -936,7 +943,17 @@ class SpaceTimePerceiverEncoder(nn.Module):
             + self.time_embedding[:, self.max_frame_count - frames :]
             + (0 if self.original_encoding else self.camera_embedding[:, :, :views])
         )
-        if self.temporal_enabled and not self.original_encoding:
+        if self.temporal_mode == "mean":
+            # 基础模块消融: 时间维均值池化(保留事件证据, 丢弃时序顺序)。
+            tokens = tokens.mean(dim=1, keepdim=True)
+            tokens = self.temporal_norm(tokens)
+            frames = 1
+        elif self.temporal_mode == "last":
+            # 基础模块消融: 只保留当前帧(丢弃全部历史记忆)。
+            tokens = tokens[:, -1:]
+            tokens = self.temporal_norm(tokens)
+            frames = 1
+        elif self.temporal_enabled and not self.original_encoding:
             temporal = tokens.permute(0, 2, 3, 1, 4).reshape(
                 batch * views * patches, frames, dim
             )
@@ -955,6 +972,12 @@ class SpaceTimePerceiverEncoder(nn.Module):
             # Preserve real temporal positions for the original causal trunk.
             visual_tokens = view_pool(tokens[:, :, :, 0])
             return visual_tokens, visual_tokens[:, -1:]
+        if self.readout_mode == "mean":
+            # 基础模块消融: 全部 T*V*P token 均值池化为单 token(保留时序层输出)。
+            pooled = self.output_projection(
+                tokens.reshape(batch, frames * views * patches, dim).mean(dim=1)
+            ).unsqueeze(1)
+            return pooled, pooled
         context = tokens.reshape(batch, frames * views * patches, dim)
         queries = self.perceiver_queries.expand(batch, -1, -1)
         for index, layer in enumerate(self.perceiver_layers):

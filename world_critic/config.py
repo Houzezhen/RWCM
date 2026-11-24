@@ -141,6 +141,13 @@ class ModelConfig:
     spacetime_layerscale_init: float | None = None
     spacetime_teacher_enabled: bool = False
     spacetime_temporal_enabled: bool = True
+    # 基础模块消融(v10 对称终点): 时序聚合与 token 汇聚可换成无参数基础模块。
+    # temporal_mode: "attention"(patch 级时序 Transformer, 默认) |
+    #   "mean"(时间维均值池化, 丢弃时序顺序) | "last"(只取当前帧, 丢弃全部历史)
+    # readout_mode: "perceiver"(64-query cross-attention, 默认) |
+    #   "mean"(全部 T*V*P token 均值池化为单 token)
+    spacetime_temporal_mode: str = "attention"
+    spacetime_readout_mode: str = "perceiver"
     # Figure 2 replacements: independent-frame CLS encoder (b), or original
     # CLS/view pooling + chronological context readout instead of queries (c).
     spacetime_original_encoding: bool = False
@@ -554,6 +561,31 @@ def validate_train_config(config: TrainConfig) -> None:
             raise ValueError(
                 "spacetime_frame_count must match the number of history_offsets."
             )
+        if config.model.spacetime_temporal_mode not in ("attention", "mean", "last"):
+            raise ValueError(
+                "spacetime_temporal_mode must be 'attention', 'mean' or 'last'; "
+                f"got {config.model.spacetime_temporal_mode!r}."
+            )
+        if config.model.spacetime_readout_mode not in ("perceiver", "mean"):
+            raise ValueError(
+                "spacetime_readout_mode must be 'perceiver' or 'mean'; "
+                f"got {config.model.spacetime_readout_mode!r}."
+            )
+        if config.model.spacetime_original_encoding and (
+            config.model.spacetime_temporal_mode != "attention"
+            or config.model.spacetime_readout_mode != "perceiver"
+        ):
+            raise ValueError(
+                "spacetime_original_encoding is mutually exclusive with "
+                "spacetime_temporal_mode/spacetime_readout_mode ablations."
+            )
+        if config.model.spacetime_original_readout and (
+            config.model.spacetime_readout_mode != "perceiver"
+        ):
+            raise ValueError(
+                "spacetime_original_readout is mutually exclusive with "
+                "spacetime_readout_mode ablations."
+            )
         if config.model.spacetime_teacher_enabled and not config.data.history_mosaic:
             raise ValueError(
                 "spacetime_teacher_enabled=true requires data.history_mosaic=true."
@@ -573,9 +605,9 @@ def validate_train_config(config: TrainConfig) -> None:
         if config.loss.q_weight > 0 and not config.model.predict_q:
             raise ValueError("loss.q_weight>0 requires model.predict_q=true.")
     if config.model.video_frontend is not None:
-        if config.model.video_frontend not in {"vjepa2", "videomae", "levjepa", "vjepa21"}:
+        if config.model.video_frontend not in {"vjepa2", "videomae", "levjepa", "vjepa21", "lejepa"}:
             raise ValueError(
-                "video_frontend must be 'vjepa2', 'videomae', 'levjepa', 'vjepa21', or null; "
+                "video_frontend must be 'vjepa2', 'videomae', 'levjepa', 'vjepa21', 'lejepa', or null; "
                 f"got {config.model.video_frontend!r}."
             )
         if not config.data.history_frames or config.data.history_offsets is None:

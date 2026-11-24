@@ -27,7 +27,33 @@ DEFAULT_FRONTEND_REPOS = {
     "vjepa21": "Dev-Jahn/vjepa2.1-vitl-fpc64-384",
     # LeVJEPA(galilai 官方, LeJEPA 家族视频版): 自定义建模代码已人工审查(纯 torch, 无网络/执行调用)
     "levjepa": "galilai-group/LeVJEPA-1.5-Large",
+    # LeJEPA(图像版): 官方 galilai-group/lejepa 只开源代码不放权重,
+    # 用 OK-AI lite_ssl 复刻(ViT-B/16, IN-1K 300ep, 在线 probe 72.04)
+    "lejepa": "OK-AI/lejepa-vitb16-pretrain-in1k",
 }
+
+
+def _load_lejepa(repo_id: str) -> nn.Module:
+    """Load the OK-AI LeJEPA reproduction without transformers dynamic modules.
+
+    The repo's modeling code uses absolute imports (``from configuration_vitv2
+    import ...``, ``from hf_src... import ...``) which the trust_remote_code
+    loader rejects. Instead: snapshot the code+weights, put the snapshot on
+    sys.path, and instantiate its PreTrainedModel subclass directly. The code
+    has been manually audited (pure torch, no network/exec calls).
+    """
+    import sys
+
+    from huggingface_hub import snapshot_download
+
+    snapshot = snapshot_download(
+        repo_id, allow_patterns=["*.py", "config.json", "model.safetensors"]
+    )
+    if snapshot not in sys.path:
+        sys.path.insert(0, snapshot)
+    from modelling_vitv2 import ViTv2PretrainedModel
+
+    return ViTv2PretrainedModel.from_pretrained(snapshot)
 
 
 def _remap_videomae_biases(model: nn.Module, repo_id: str) -> None:
@@ -106,6 +132,10 @@ class VideoFrontendEncoder(nn.Module):
             from transformers import AutoModel
 
             self.backbone = AutoModel.from_pretrained(repo, trust_remote_code=True)
+        elif kind == "lejepa":
+            # OK-AI 复刻: 代码已人工审查(纯 torch, 无网络/执行调用),
+            # 但其绝对导入不兼容 trust_remote_code, 走 _load_lejepa
+            self.backbone = _load_lejepa(repo)
         elif kind == "videomae":
             self.backbone = VideoMAEModel.from_pretrained(repo)
             _remap_videomae_biases(self.backbone, repo)
@@ -123,7 +153,7 @@ class VideoFrontendEncoder(nn.Module):
         self.frontend_hidden = (
             getattr(cfg_b, "hidden_size", None) or getattr(cfg_b, "embed_dim", None)
         )
-        self.tubelet = cfg_b.tubelet_size
+        self.tubelet = getattr(cfg_b, "tubelet_size", None) or (1 if kind == "lejepa" else 2)
         self.patch = getattr(cfg_b, "patch_size", 16)
         self.has_cls_token = kind == "levjepa"  # LeVJEPA hidden 首位是 CLS(pooled 取 hidden[:,0])
         self.latent_dim = config.latent_dim
@@ -158,6 +188,19 @@ class VideoFrontendEncoder(nn.Module):
         )
         if self.kind in ("levjepa", "vjepa21"):  # 这两者约定 [B, C, T, H, W]
             videos = videos.permute(0, 2, 1, 3, 4)
+        if self.kind == "lejepa":
+            # 图像前端: 逐帧编码(videos 此刻为时序正序 [B*V, T, C, H, W]),
+            # 模型输出 dict 的 patch_latent = 每帧 patch tokens。
+            outputs = self.backbone(videos.flatten(0, 1))  # forward(x) 位置参数; pixel_values= 会被 **kwargs 吞掉
+            hidden = outputs["patch_latent"] if isinstance(outputs, dict) else outputs.patch_latent
+            if hidden is None:
+                raise RuntimeError("LeJEPA front-end returned no patch_latent.")
+            patches = hidden.size(-2)
+            tokens = hidden.view(batch, views, frames, patches, self.frontend_hidden)
+            tokens = tokens.permute(0, 2, 1, 3, 4).reshape(
+                batch, frames, views, patches, self.frontend_hidden
+            ).flip(1)  # 恢复 dataset 约定 current-to-oldest
+            return self.projection(tokens)
         hidden = self.backbone(videos).last_hidden_state  # [B*V, 1?+T'P, H]
         if self.has_cls_token:
             hidden = hidden[:, 1:]
