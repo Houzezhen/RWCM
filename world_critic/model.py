@@ -904,6 +904,15 @@ class SpaceTimePerceiverEncoder(nn.Module):
             else None
         )
         self.output_projection = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, dim))
+        # 全连接读出(c-mlp 消融): 逐 token 打分加权 + 两层 MLP, 无注意力无 query
+        if self.readout_mode == "mlp":
+            self.readout_score = nn.Sequential(nn.LayerNorm(dim), nn.Linear(dim, 1))
+            self.readout_mlp = nn.Sequential(
+                nn.LayerNorm(dim), nn.Linear(dim, dim), nn.GELU(), nn.Linear(dim, dim)
+            )
+        else:
+            self.readout_score = None
+            self.readout_mlp = None
         self.register_buffer("blend_gate", torch.tensor(0.0), persistent=True)
         nn.init.normal_(self.time_embedding, std=0.02)
         if self.perceiver_queries is not None:
@@ -977,6 +986,15 @@ class SpaceTimePerceiverEncoder(nn.Module):
             pooled = self.output_projection(
                 tokens.reshape(batch, frames * views * patches, dim).mean(dim=1)
             ).unsqueeze(1)
+            return pooled, pooled
+        if self.readout_mode == "mlp":
+            # 基础模块消融: 全连接读出——逐 token LayerNorm+Linear 打分,
+            # softmax 归一为权重后加权求和(数据相关的静态打分, 无 QK 注意力、
+            # 无 query、无跨 token 交互), 再过两层 MLP 与输出投影。
+            flat = tokens.reshape(batch, frames * views * patches, dim)
+            weights = torch.softmax(self.readout_score(flat), dim=1)
+            mixed = (flat * weights).sum(dim=1, keepdim=True)
+            pooled = self.output_projection(self.readout_mlp(mixed))
             return pooled, pooled
         context = tokens.reshape(batch, frames * views * patches, dim)
         queries = self.perceiver_queries.expand(batch, -1, -1)

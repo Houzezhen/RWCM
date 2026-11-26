@@ -145,7 +145,9 @@ class ModelConfig:
     # temporal_mode: "attention"(patch 级时序 Transformer, 默认) |
     #   "mean"(时间维均值池化, 丢弃时序顺序) | "last"(只取当前帧, 丢弃全部历史)
     # readout_mode: "perceiver"(64-query cross-attention, 默认) |
-    #   "mean"(全部 T*V*P token 均值池化为单 token)
+    #   "mean"(全部 T*V*P token 均值池化为单 token) |
+    #   "mlp"(全连接读出: 逐 token LayerNorm+Linear 打分, softmax 加权求和,
+    #     再过两层 MLP; 无 QK 注意力、无 query、无跨 token 交互)
     spacetime_temporal_mode: str = "attention"
     spacetime_readout_mode: str = "perceiver"
     # Figure 2 replacements: independent-frame CLS encoder (b), or original
@@ -566,9 +568,9 @@ def validate_train_config(config: TrainConfig) -> None:
                 "spacetime_temporal_mode must be 'attention', 'mean' or 'last'; "
                 f"got {config.model.spacetime_temporal_mode!r}."
             )
-        if config.model.spacetime_readout_mode not in ("perceiver", "mean"):
+        if config.model.spacetime_readout_mode not in ("perceiver", "mean", "mlp"):
             raise ValueError(
-                "spacetime_readout_mode must be 'perceiver' or 'mean'; "
+                "spacetime_readout_mode must be 'perceiver', 'mean' or 'mlp'; "
                 f"got {config.model.spacetime_readout_mode!r}."
             )
         if config.model.spacetime_original_encoding and (
