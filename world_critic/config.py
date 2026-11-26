@@ -662,8 +662,8 @@ def validate_train_config(config: TrainConfig) -> None:
         or config.model.latent_dim % config.model.spacetime_heads != 0
     ):
         raise ValueError("latent_dim must be divisible by positive spacetime_heads.")
-    if config.model.perceiver_queries not in (16, 64, 128):
-        raise ValueError("perceiver_queries must be 16, 64 or 128.")
+    if config.model.perceiver_queries not in (1, 16, 64, 128):
+        raise ValueError("perceiver_queries must be 1, 16, 64 or 128.")
     if config.model.perceiver_layers < 1 or config.model.perceiver_mlp_ratio <= 0:
         raise ValueError("perceiver_layers and perceiver_mlp_ratio must be positive.")
     if config.model.temporal_transformer_layers < 1:
