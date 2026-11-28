@@ -1703,11 +1703,13 @@ class WorldCriticModel(nn.Module):
                 )
                 gate = float(self.spacetime_encoder.blend_gate)
             else:
-                # Front-end without the SpaceTime reducer: the video model's own
-                # temporal aggregation collapses the history to a current state
-                # (last tubelet), mirroring the cross-frame fusion conditions.
+                # Front-end without the SpaceTime reducer: read the CURRENT
+                # temporal slot only (dataset order current-to-oldest, slot 0).
+                # NOTE: 2026-11-28 修复 —— 此前误取 [:, -1](最旧历史帧, offset≈80),
+                # 终点窗口的该帧位于按压后/复位前, 成败直接可见, 导致无 ST 前端
+                # 的终点二分类虚高(AUROC 0.91-1.00); 修正后对照语义为"只读当前帧"。
                 gate = 1.0
-                current_views = history_tokens[:, -1].mean(dim=2)
+                current_views = history_tokens[:, 0].mean(dim=2)
                 views = current_views.size(1)
                 current_views = current_views + self.vision_encoder.camera_embedding[:, 0, :views]
                 current_state = self.pool_views(current_views.unsqueeze(1))
